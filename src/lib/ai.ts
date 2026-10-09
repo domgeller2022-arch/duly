@@ -52,6 +52,13 @@ export function extractJson(text: string): unknown {
   return JSON.parse(slice);
 }
 
+/** Redact client-identifying details from incidental context (see ask-data). */
+export function redactForAi(text: string): string {
+  return text
+    .replace(/\b\d{2}\s?\d{3}\s?\d{3}\s?\d{3}\b/g, '[ABN]')
+    .replace(/[$€£]\s?[\d,]+(?:\.\d{2})?/g, '[amount]');
+}
+
 export interface AiTask<T> {
   /** The feature name, for the prompt template and the log. */
   feature: string;

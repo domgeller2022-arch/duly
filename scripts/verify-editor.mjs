@@ -137,6 +137,11 @@ async function main() {
 
     await page.getByRole('textbox', { name: 'Business name' }).fill('Gate Check Pty Ltd');
     await page.getByRole('textbox', { name: 'ABN' }).fill('51824753556');
+    // GST-registered, deliberately: a registered business is the harder path
+    // (the tax-invoice compliance rules apply), and for a while the editor
+    // could not submit one at all. If this switch ever regresses, the
+    // finalise step below fails with the heading rule.
+    await page.getByRole('switch', { name: 'Registered for GST' }).click();
     for (const label of ['Continue', 'Continue', 'Continue']) {
       await page.getByRole('button', { name: label }).click();
       await page.waitForTimeout(150);
@@ -269,10 +274,11 @@ async function main() {
       });
     });
     // This business is not GST registered, so "Invoice" is the correct frozen
-    // heading. The point of the check is that the snapshot exists at all.
+    // heading. The registered variant freezes "Tax Invoice" — the whole
+    // point of running the gate as a GST-registered business.
     check(
       'Submitting froze a tax snapshot',
-      Boolean(snapshot?.finalisedAt) && snapshot?.heading === 'Invoice',
+      Boolean(snapshot?.finalisedAt) && snapshot?.heading === 'Tax Invoice',
       JSON.stringify(snapshot),
     );
 

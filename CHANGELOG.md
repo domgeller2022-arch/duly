@@ -329,6 +329,46 @@ tests, new file); the description probe re-run green.
   retainers, oldest first, and hours for the time-based ones — so the
   balance and the low-balance alert are real figures.
 
+### Remediation R9 — reports worth reading, and a CI that runs
+
+- **Reports are scoped and honest.** Every report is the active business's,
+  in the currency it presents — summing dollars and yen into one figure is
+  not a report — and the receipts in the income report count against the
+  invoices the report is about. Credit notes take their GST back off the
+  quarter they were issued in, and the GST summary uses `gstPayable` (the
+  GST-coded lines), not the sum of every tax code on the document.
+- **The dashboard's "Paid this month" is this month's receipts** — payments
+  are their own records, so the tile counts the money that landed this
+  month, not every fully paid invoice the business ever issued.
+- **Bulk finalise runs the compliance gate.** The one path that could issue
+  an invoice with no lines or an invalid ABN and nothing in the way now
+  runs the same checks the editor's submit does, and skips a document with
+  a blocking issue, saying which.
+- **AI feature runs carry the key.** The pipeline resolves the API key from
+  the settings' secret ref itself — no caller ever passed it, so every
+  cloud endpoint answered 401 while the settings' own test connection
+  succeeded.
+- **The redaction switch does its honest job.** Ask-your-data's context —
+  client names, amounts, ABNs — goes to a cloud model as placeholders when
+  the switch is on. The invoice-entry instruction and the receipt photo are
+  the user's own request and cannot be redacted without destroying it; the
+  settings hint says so.
+- **Edits that land during an autosave write are kept.** The flush cleared
+  the dirty flag after the write finished, so an edit typed mid-write found
+  nothing to save on the re-run. The write captures what it is writing;
+  an edit that lands during it keeps the document dirty and re-schedules.
+- **CI runs the gates**: typecheck, lint, the unit suite (the
+  performance-sensitive item search in its own process, where its 100 ms
+  budget is not contested by the whole suite), a production build, and all
+  three browser scripts — on every push and pull request.
+- **verify:data looks for "ABN"**, the label the field has had since the
+  client-form fix, and **verify:editor now runs as a GST-registered
+  business** — the harder path, and the one the editor could not submit at
+  all for a while. If C1 ever regresses, CI fails.
+- Also fixed in passing: `withGstChange` derived "today" from UTC while the
+  app runs on the business's timezone, so a registration recorded today in
+  Sydney was not yet in effect; the callers now pass the app's today.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

@@ -23,6 +23,7 @@ import type { BusinessProfile, Client, Document, Settings } from '@/core/schemas
 import type { TaxCode } from '@/core/tax/tax';
 import { paymentSchema } from '@/core/schemas/document';
 import { recalculateDocument } from '@/lib/documentService';
+import { countBySeverity, runComplianceChecks } from '@/core/validation/compliance';
 import { files, storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
 import { finaliseDocument } from '@/lib/finalise';
@@ -87,6 +88,24 @@ export async function bulkFinalise(documents: Document[], ctx: BulkContext): Pro
         save: false,
         deriveStatus: false,
       });
+
+      // The same compliance gate the editor's submit runs: bulk finalise
+      // used to issue anything — no lines, an invalid ABN — with nothing
+      // in the way. A blocking issue skips the document and says why.
+      const checks = runComplianceChecks({
+        document: bundle.document,
+        lines: bundle.lines,
+        client,
+        profile,
+        settings: ctx.settings,
+        result,
+        template: ctx.templates.find((t) => t.id === document.designTemplateId) ?? undefined,
+      });
+      if (countBySeverity(checks).block > 0) {
+        const worst = checks.find((c) => c.severity === 'block');
+        outcome.skipped.push({ document, reason: worst?.title ?? 'a blocking compliance issue' });
+        continue;
+      }
 
       await finaliseDocument({
         document: bundle.document,

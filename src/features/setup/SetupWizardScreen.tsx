@@ -89,7 +89,7 @@ export function SetupWizardScreen() {
           // A brand-new business starts with its own numbering sequences.
           defaultTaxCodeId: registered ? defaultTaxCodeFor(true) : draft.defaultTaxCodeId,
         }),
-        { registered, from: draft.gstRegisteredFrom ?? today, note: 'Set up in the setup wizard' },
+        { registered, from: draft.gstRegisteredFrom ?? today, note: 'Set up in the setup wizard' }, today,
       );
 
       await storage().saveBusinessProfile(profile);

@@ -313,7 +313,7 @@ async function main() {
     await page.goto(`${ORIGIN}/clients/new`, { waitUntil: 'networkidle' });
     await page.waitForSelector('#root > *', { timeout: 15000 });
 
-    const abn = page.getByRole('textbox', { name: 'Tax ID' });
+    const abn = page.getByRole('textbox', { name: 'ABN' });
 
     await abn.fill('5182475355'); // one digit short
     await page.waitForSelector('text=An ABN has 11 digits', { timeout: 5000 });

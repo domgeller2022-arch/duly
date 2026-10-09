@@ -643,10 +643,25 @@ export const useEditorStore = create<EditorState>((set, get) => {
         saveTimer = null;
       }
 
+      // What is being written, captured up front: an edit that lands while
+      // the write is in flight re-dirties the document, and clearing the
+      // flag after the await used to wipe that edit's save away.
+      const writing = { document: state.document, lines: state.lines };
+
       set({ saving: true });
       try {
-        await storage().saveDocument(state.document, state.lines);
-        set({ saving: false, dirty: false, lastSavedAt: new Date().toISOString() });
+        await storage().saveDocument(writing.document, writing.lines);
+        const after = get();
+        const editsLanded =
+          after.document !== writing.document || after.lines !== writing.lines;
+        set({
+          saving: false,
+          // Only the write that actually landed clears the flag; an edit
+          // from during the write keeps the document dirty and re-schedules.
+          dirty: editsLanded ? true : false,
+          lastSavedAt: new Date().toISOString(),
+        });
+        if (editsLanded) scheduleSave();
       } catch (error) {
         set({
           saving: false,

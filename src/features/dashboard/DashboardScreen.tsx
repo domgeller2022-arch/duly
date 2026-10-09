@@ -41,6 +41,7 @@ export function DashboardScreen() {
   const profile = useActiveProfile();
   const settings = useAppStore((s) => s.settings);
   const documents = useAppStore((s) => s.documents);
+  const payments = useAppStore((s) => s.payments);
   const clients = useAppStore((s) => s.clients);
   const reminders = useAppStore((s) => s.reminders);
   const schedules = useAppStore((s) => s.recurringSchedules);
@@ -66,12 +67,20 @@ export function DashboardScreen() {
     const overdueTotal = overdueDocs.reduce((acc, d) => acc + Math.max(0, d.totals.balance), 0);
 
     const monthStart = `${today.slice(0, 7)}-01`;
-    const paidThisMonth = invoices
-      .filter((d) => d.status === 'paid' && d.totals.paid > 0)
-      .reduce((acc, d) => acc + d.totals.paid, 0);
-    const paidThisMonthCount = invoices.filter(
-      (d) => d.status === 'paid' && d.updatedAt >= monthStart,
-    ).length;
+    // Money actually received this month: payments are their own records,
+    // so "paid" is when the money landed, not the invoice's last touch.
+    const paidThisMonth = payments
+      .filter((p) => {
+        const doc = scoped.find((d) => d.id === p.documentId);
+        return doc && p.date >= monthStart;
+      })
+      .reduce((acc, p) => acc + p.amount, 0);
+    const paidThisMonthCount = new Set(
+      payments.filter((p) => {
+        const doc = scoped.find((d) => d.id === p.documentId);
+        return doc && p.date >= monthStart;
+      }).map((p) => p.documentId),
+    ).size;
 
     const drafts = scoped.filter((d) => d.type === 'invoice' && d.status === 'draft');
     const reviewRequired = scoped.filter((d) => d.reviewRequired && d.status === 'draft');

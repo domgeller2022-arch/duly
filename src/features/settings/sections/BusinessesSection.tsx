@@ -295,7 +295,7 @@ function GstSwitch({
   // The toggle is a change happening today; the user can then move its date
   // with the field below. Toggling at the old effective date used to
   // overwrite the recorded change instead of adding one.
-  const next = withGstChange(profile, { registered: !profile.gstRegistered, from: today });
+  const next = withGstChange(profile, { registered: !profile.gstRegistered, from: today }, today);
 
   const affected = draftsAffectedByChange(drafts, {
     profileId: profile.id,
@@ -339,10 +339,11 @@ function GstSwitch({
                 const gstRegisteredFrom = e.target.value || today;
                 onPatch({
                   gstRegisteredFrom,
-                  gstHistory: withGstChange(profile, {
-                    registered: profile.gstRegistered,
-                    from: gstRegisteredFrom,
-                  }).gstHistory,
+                  gstHistory: withGstChange(
+                    profile,
+                    { registered: profile.gstRegistered, from: gstRegisteredFrom },
+                    today,
+                  ).gstHistory,
                 });
               }}
             />

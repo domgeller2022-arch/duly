@@ -15,7 +15,7 @@ import { useAppStore } from '@/state/app';
 import { files } from '@/adapters';
 import { AGE_BUCKETS, ageBucket } from '@/lib/automation/overdue';
 import { tableCsv } from '@/lib/exports';
-import { runAiTask } from '@/lib/ai';
+import { runAiTask, redactForAi } from '@/lib/ai';
 import { askDataTask } from '@/lib/aiTasks';
 import { Sparkles } from 'lucide-react';
 import { Alert, Button, Panel, Select, Table, Td, TextInput, Th, useToast } from '@/ui/components/base';
@@ -72,10 +72,35 @@ export function ReportsScreen() {
   const currency = profiles[0]?.defaultCurrency ?? settings?.defaultCurrency ?? 'AUD';
   const symbol = currency === 'AUD' || currency === 'NZD' || currency === 'USD' ? '$' : currency;
 
-  /** Invoices that count towards receivables and income. */
+  /**
+   * The active business's issued invoices, in the currency the report
+   * presents — summing dollars and yen into one figure is not a report.
+   */
   const invoices = useMemo(
-    () => documents.filter((d) => d.type === 'invoice' && d.status !== 'draft' && d.status !== 'void'),
-    [documents],
+    () =>
+      documents.filter(
+        (d) =>
+          d.type === 'invoice' &&
+          d.status !== 'draft' &&
+          d.status !== 'void' &&
+          d.profileId === profiles[0]?.id &&
+          d.currency === currency,
+      ),
+    [documents, profiles, currency],
+  );
+
+  /** Issued credit notes, scoped the same way: money coming back off. */
+  const creditNotes = useMemo(
+    () =>
+      documents.filter(
+        (d) =>
+          d.type === 'credit_note' &&
+          d.status !== 'draft' &&
+          d.status !== 'void' &&
+          d.profileId === profiles[0]?.id &&
+          d.currency === currency,
+      ),
+    [documents, profiles, currency],
   );
 
   /* ---- aged receivables, per client ---- */
@@ -121,7 +146,11 @@ export function ReportsScreen() {
       const key = doc.issueDate.slice(0, 7);
       if (invoiced.has(key)) invoiced.set(key, (invoiced.get(key) ?? 0) + doc.totals.total);
     }
+    // Receipts count against the month the money landed, and only for the
+    // invoices this report is about.
+    const invoiceIds = new Set(invoices.map((d) => d.id));
     for (const payment of payments) {
+      if (!invoiceIds.has(payment.documentId)) continue;
       const key = payment.date.slice(0, 7);
       if (paid.has(key)) paid.set(key, (paid.get(key) ?? 0) + payment.amount);
     }
@@ -149,9 +178,19 @@ export function ReportsScreen() {
       const key = quarterKey(doc.issueDate);
       const entry = keys.get(key);
       if (!entry) continue;
-      entry.tax += doc.totals.tax;
+      // gstPayable is the GST-coded lines only — a custom-rate code is not
+      // GST collected, whatever the BAS says next.
+      entry.tax += doc.totals.gstPayable;
       entry.invoiced += doc.totals.total;
       entry.count += 1;
+    }
+    for (const note of creditNotes) {
+      const key = quarterKey(note.issueDate);
+      const entry = keys.get(key);
+      if (!entry) continue;
+      // A credit note takes GST back off the quarter it was issued in.
+      entry.tax += note.totals.gstPayable;
+      entry.invoiced += note.totals.total;
     }
 
     return [...keys.entries()]
@@ -161,29 +200,33 @@ export function ReportsScreen() {
 
   const gstLabel = (key: string): string => key.replace('-Q', ' Q');
 
-  /** The read-only context ask-your-data answers from: the report numbers. */
-  const askDataContext = useMemo(
-    () =>
-      [
-        `Outstanding: ${money(aged.grand, currency)} across ${aged.perClient.length} client(s).`,
-        ...aged.perClient.slice(0, 5).map(([clientId, entry]) => {
-          const name = clients.find((c) => c.id === clientId)?.displayName ?? 'No client';
-          return `  ${name} owes ${money(entry.total, currency)}.`;
-        }),
-        `Invoiced last 12 months: ${money(
-          income.reduce((acc, r) => acc + r.invoiced, 0),
-          currency,
-        )}; received ${money(
-          income.reduce((acc, r) => acc + r.paid, 0),
-          currency,
-        )}.`,
-        ...gst.map(
-          (row) =>
-            `  ${row.key}: ${money(row.tax, currency)} GST on ${money(row.invoiced, currency)} invoiced.`,
-        ),
-      ].join('\n'),
-    [aged, income, gst, clients, currency],
-  );
+  /** The read-only context ask-your-data answers from: the report numbers,
+   *  redacted per the switch before it can reach a cloud model. */
+  const askDataContext = useMemo(() => {
+    const raw = [
+      `Outstanding: ${money(aged.grand, currency)} across ${aged.perClient.length} client(s).`,
+      ...aged.perClient.slice(0, 5).map(([clientId, entry]) => {
+        const name = clients.find((c) => c.id === clientId)?.displayName ?? 'No client';
+        return `  ${name} owes ${money(entry.total, currency)}.`;
+      }),
+      `Invoiced last 12 months: ${money(
+        income.reduce((acc, r) => acc + r.invoiced, 0),
+        currency,
+      )}; received ${money(
+        income.reduce((acc, r) => acc + r.paid, 0),
+        currency,
+      )}.`,
+      ...gst.map(
+        (row) =>
+          `  ${row.key}: ${money(row.tax, currency)} GST on ${money(row.invoiced, currency)} invoiced.`,
+      ),
+    ].join('\n');
+    // The redaction switch covers exactly this: incidental context on its way
+    // to somebody else's server. The invoice-entry instruction and the
+    // receipt photo are the user's own request and cannot be redacted
+    // without destroying it.
+    return settings?.aiRedact ? redactForAi(raw) : raw;
+  }, [aged, income, gst, clients, currency, settings?.aiRedact]);
 
   const download = () => {
     if (report === 'aged') {

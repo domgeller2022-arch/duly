@@ -1,0 +1,42 @@
+# CI: the same gates the plan's verification chapter names, on every push.
+#
+# typecheck, lint and the unit suite on one job; the three browser scripts
+# on another (they need a real Chromium, not jsdom). The performance-sensitive
+# item search runs in its own process on the unit job — under a full parallel
+# run its 100 ms budget is contested by the suite itself.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -b --noEmit
+      - run: npm run lint
+      - run: npx vitest run --exclude '**/items.performance.test.ts'
+      - run: npx vitest run src/adapters/web/items.performance.test.ts
+      - run: npm run build
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npx playwright install --with-deps chromium
+      - run: npm ci
+      - run: npm run verify:data
+      - run: npm run verify:editor
+      - run: npm run verify:offline
