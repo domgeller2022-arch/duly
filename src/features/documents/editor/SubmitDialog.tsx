@@ -25,7 +25,7 @@ import { useEditorStore } from './editorStore';
 import { clientCodeFor, finaliseDocument, outputPathFor, patternFor } from '@/lib/finalise';
 import { renderBundlePdf } from '@/lib/exports';
 import { files, platform } from '@/adapters';
-import { previewNumber } from '@/core/engines/numbering';
+import { nextCounterValue, previewNumber, shouldReset } from '@/core/engines/numbering';
 import { Alert, Button, Checkbox, Dialog, useToast } from '@/ui/components/base';
 
 export function SubmitDialog({
@@ -63,12 +63,23 @@ export function SubmitDialog({
     [clients, document?.clientId],
   );
 
-  /* ---- the number that will be assigned, previewed from the pattern ---- */
-
-  const pattern = useMemo(() => (document ? patternFor(document.type) : 'INV-{YYYY}-{####}'), [document]);
+  /* ---- the number that will be assigned, previewed from the real sequence ---- */
 
   const nextNumber = useMemo(() => {
-    if (!document) return '';
+    if (!document || !profile) return '';
+    const sequence = useAppStore
+      .getState()
+      .numberSequences.find((s) => s.profileId === profile.id && s.documentType === document.type);
+    // No sequence yet: the reservation will create one starting at 1 with the
+    // default pattern. With one: the counter it actually holds, rolled over
+    // when the document's issue date crosses the sequence's period.
+    const pattern = sequence?.pattern ?? patternFor(document.type);
+    const value = sequence
+      ? nextCounterValue(
+          sequence,
+          shouldReset(sequence, document.issueDate, settings?.financialYearStartMonth ?? 7),
+        )
+      : 1;
     return previewNumber(
       pattern,
       {
@@ -77,9 +88,9 @@ export function SubmitDialog({
         clientCode: clientCodeFor(client),
         profileCode: profile?.code || undefined,
       },
-      1,
+      value,
     );
-  }, [pattern, document, client, profile]);
+  }, [document, client, profile, settings]);
 
   /* ---- the path the PDF will land in ---- */
 

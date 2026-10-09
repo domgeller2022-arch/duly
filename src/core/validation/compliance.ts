@@ -20,6 +20,8 @@ import { formatMoney } from '../money/money';
 import { currencyDecimals } from '../money/currencies';
 import type { DesignTemplate } from '../schemas/template';
 import { formatAbn, isValidAbn } from './abn';
+import { gstStatusAt } from './gst';
+import { headingForDocument } from './taxSnapshot';
 
 export type ComplianceSeverity = 'block' | 'warn' | 'info';
 
@@ -75,10 +77,14 @@ export function runComplianceChecks(input: ComplianceInput): ComplianceCheck[] {
   const { document, lines, client, profile, settings, result, template } = input;
   const checks: ComplianceCheck[] = [];
 
-  const gstRegistered = document.taxSnapshot?.gstRegistered ?? profile.gstRegistered;
-  const heading = document.taxSnapshot?.heading ?? 'Invoice';
-  const isTaxDocument =
-    document.type === 'invoice' || document.type === 'credit_note' || document.type === 'proforma';
+  // The checks run on what the document would print. A draft has no tax
+  // snapshot, so the heading is the one it *would* carry once submitted —
+  // the GST status at its issue date, not today's switch — and a checker
+  // that assumed "Invoice" here blocked every GST-registered submit.
+  const gstRegistered = document.taxSnapshot?.gstRegistered ?? gstStatusAt(profile, document.issueDate);
+  const heading = headingForDocument(document, gstRegistered);
+  // Pro-formas are not tax invoices: the ATO rules do not apply to them.
+  const isTaxDocument = document.type === 'invoice' || document.type === 'credit_note';
   const valued = lines.filter(
     (l) => !l.deletedAt && l.type !== 'section' && l.type !== 'note' && l.type !== 'discount',
   );

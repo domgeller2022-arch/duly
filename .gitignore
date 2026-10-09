@@ -13,8 +13,11 @@ dev-dist
 src-tauri/target
 src-tauri/gen/schemas
 
-# Internal audit: lists unfixed vulnerabilities, kept out of the public repo
+# Internal audits and the remediation plan: they list unfixed security
+# issues, so they stay local and out of the public repo
 docs/code-audit.md
+Claude Audit.md
+docs/remediation-plan.md
 
 # Android build outputs inside the generated project
 src-tauri/gen/android/.gradle

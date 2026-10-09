@@ -486,7 +486,7 @@ export class DexieStorageAdapter implements StorageAdapter {
     clientCode?: string;
     profileCode?: string;
   }): Promise<{ number: string; sequence: NumberSequence }> {
-    return this.db.transaction('rw', this.db.numberSequences, async () => {
+    return this.db.transaction('rw', this.db.numberSequences, this.db.settings, async () => {
       const existing = await this.db.numberSequences
         .where('[profileId+documentType]')
         .equals([args.profileId, args.documentType])
@@ -509,21 +509,42 @@ export class DexieStorageAdapter implements StorageAdapter {
             issued: [],
             startAt: 1,
           };
+      // A pattern argument only names the pattern a *new* sequence is born
+      // with; it must never overwrite what the settings screen stored — the
+      // numbering section is the one place a pattern is edited.
 
-      if (args.pattern) sequence.pattern = args.pattern;
+      // The financial-year start month is a setting, not a constant; the
+      // settings screen previews resets with it, so the reservation must too.
+      const settingsRow = await this.db.settings.get('settings');
+      const fyMonth = settingsRow?.financialYearStartMonth ?? 7;
 
-      const reset = shouldReset(sequence, args.date);
-      const value = nextCounterValue(sequence, reset);
-      const number = renderNumber(sequence.pattern, {
+      const reset = shouldReset(sequence, args.date, fyMonth);
+      let value = nextCounterValue(sequence, reset);
+      let number = renderNumber(sequence.pattern, {
         value,
         date: args.date,
         documentType: sequence.documentType,
         clientCode: args.clientCode,
         profileCode: args.profileCode,
       });
+      // A number once issued can never be issued again, whatever the reset
+      // rule did — a forward reset can land on a counter that already ran.
+      while (sequence.issued.includes(number)) {
+        value += 1;
+        number = renderNumber(sequence.pattern, {
+          value,
+          date: args.date,
+          documentType: sequence.documentType,
+          clientCode: args.clientCode,
+          profileCode: args.profileCode,
+        });
+      }
 
       sequence.nextValue = value + 1;
-      sequence.periodKey = periodKeyFor(args.date, sequence.resetRule);
+      // The period key only ever moves forward — a backdated reservation must
+      // not drag it back, or the next forward date would reset the counter
+      // again and churn through numbers the dedupe loop has to skip.
+      if (reset) sequence.periodKey = periodKeyFor(args.date, sequence.resetRule, fyMonth);
       sequence.issued = [...sequence.issued, number];
 
       await this.db.numberSequences.put(sequence);

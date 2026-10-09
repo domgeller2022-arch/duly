@@ -136,7 +136,12 @@ export function shouldReset(
   financialYearStartMonth = 7,
 ): boolean {
   if (sequence.resetRule === 'never') return false;
-  return periodKeyFor(date, sequence.resetRule, financialYearStartMonth) !== sequence.periodKey;
+  const next = periodKeyFor(date, sequence.resetRule, financialYearStartMonth);
+  // Only a period that has genuinely arrived rolls the counter over. A
+  // backdated document — the invoice issued 31 Dec after the first of
+  // January — must never roll the sequence back to a number it has already
+  // handed out.
+  return next > sequence.periodKey;
 }
 
 /** The counter value to hand out, applying the start value and any reset. */

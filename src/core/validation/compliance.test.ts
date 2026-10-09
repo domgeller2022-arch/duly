@@ -134,6 +134,37 @@ function run(
 
 const ids = (checks: { id: string }[]) => checks.map((c) => c.id);
 
+describe('drafts: the checks run on what the document would print, not on a missing snapshot', () => {
+  it('a GST-registered draft passes — its heading is the one it would print', () => {
+    // A draft has no tax snapshot. The checker used to assume "Invoice" and
+    // block every GST-registered submit with a heading error.
+    const draft = document({ status: 'draft', taxSnapshot: null });
+    const checks = run({ document: draft });
+    expect(countBySeverity(checks).block).toBe(0);
+  });
+
+  it('a pro-forma is not subject to the tax-invoice heading rule', () => {
+    // Pro-formas are not tax invoices; their heading is "Pro-forma Invoice"
+    // and the ATO rules do not apply to them.
+    const draft = document({ status: 'draft', taxSnapshot: null, type: 'proforma' });
+    const checks = run({ document: draft });
+    expect(checks.filter((c) => c.severity === 'block' && c.id === 'heading')).toHaveLength(0);
+  });
+
+  it('the GST status is read at the issue date, not from today’s switch', () => {
+    // Registered from 2027-07-01 only: a document issued 2026-10-06 is not a
+    // tax invoice, whatever the current switch says.
+    const business = profile({
+      gstRegistered: true,
+      gstRegisteredFrom: '2027-07-01',
+      gstHistory: [{ registered: true, from: '2027-07-01', note: '' }],
+    });
+    const draft = document({ status: 'draft', taxSnapshot: null });
+    const checks = run({ document: draft, profile: business });
+    expect(checks.filter((c) => c.id === 'heading')).toHaveLength(0);
+  });
+});
+
 describe('the seven details a tax invoice under $1,000 must carry', () => {
   it('passes a complete invoice', () => {
     const blocking = countBySeverity(run()).block;

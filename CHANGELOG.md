@@ -16,6 +16,38 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The initial release: the build plan's phases 0–10 — the web app, the desktop
 app for macOS and Windows, and the Android build. Newest first.
 
+### Remediation R1 — unblock the billing loop
+
+The first phase of the consolidated remediation plan (the two audits, merged):
+the two fixes that stop a GST-registered business invoicing at all, plus the
+numbering guarantees around them.
+
+- **A GST-registered business can submit again.** The compliance checks ran on
+  a draft as if its heading were "Invoice" — a draft has no tax snapshot — so
+  every submit was blocked with "Heading must say Tax Invoice". The checks now
+  run on what the document would print: the heading falls back to the one for
+  its type at the GST status on its issue date (which also makes the effective
+  -date history live, not dead code). Pro-formas leave the tax-invoice rules
+  entirely — they are not tax invoices, and the checker no longer demands a
+  heading they can never have.
+- **A number can never be issued twice.** The yearly reset fired on any period
+  change, including going backwards: 30 Dec 2026, 2 Jan 2027, then a backdated
+  31 Dec 2026 handed out INV-2026-0001 twice. A reset now only happens when the
+  period genuinely moves forward, a backdated reservation never drags the
+  sequence's period key back, and the reservation skips any number already in
+  the issued list regardless. The financial-year start month comes from the
+  settings, so a reservation and the settings preview agree.
+- **The numbering pattern set in Settings survives a submit.** Reservation used
+  to overwrite the stored pattern with the default on every finalise; a
+  pattern argument now only names what a new sequence is born with.
+- **The Submit dialog previews the real number** — the sequence's actual next
+  value under its stored pattern, with the reset rule applied — instead of
+  always showing counter 1 under the words "Reserved now".
+
+Tests: three new compliance cases (registered draft passes, pro-forma exempt,
+issue-date GST status governs), and a reservation case that reproduces the
+backdated year boundary and asserts three distinct numbers.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

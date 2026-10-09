@@ -69,6 +69,22 @@ describe('reserveDocumentNumber', () => {
     );
   });
 
+  it('never reissues a number across a backdated year boundary', async () => {
+    await freshStorage();
+    const db = storage();
+
+    const dec = await db.reserveDocumentNumber({ profileId: 'prof_1', documentType: 'invoice', date: '2026-12-30' });
+    const jan = await db.reserveDocumentNumber({ profileId: 'prof_1', documentType: 'invoice', date: '2027-01-02' });
+    // A backdated invoice from the year that just ended — the classic way a
+    // reset rule reissues a number it has already handed out.
+    const backdated = await db.reserveDocumentNumber({ profileId: 'prof_1', documentType: 'invoice', date: '2026-12-31' });
+
+    expect(dec.number).toBe('INV-2026-0001');
+    expect(jan.number).toBe('INV-2027-0001');
+    expect(backdated.number).toBe('INV-2026-0002');
+    expect(new Set([dec.number, jan.number, backdated.number]).size).toBe(3);
+  });
+
   it('keeps a separate counter per document type and per business', async () => {
     await freshStorage();
     const db = storage();

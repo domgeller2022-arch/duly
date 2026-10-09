@@ -205,6 +205,10 @@ describe('number sequences', () => {
   it('resets when the period changes', () => {
     expect(shouldReset({ resetRule: 'yearly', periodKey: '2025' }, '2026-10-06')).toBe(true);
     expect(shouldReset({ resetRule: 'yearly', periodKey: '2026' }, '2026-10-06')).toBe(false);
+    // A backdated document must never roll the counter back: the period went
+    // backwards, so the sequence keeps running where it was.
+    expect(shouldReset({ resetRule: 'yearly', periodKey: '2027' }, '2026-12-31')).toBe(false);
+    expect(shouldReset({ resetRule: 'financial_year', periodKey: '2027-28' }, '2026-10-06')).toBe(false);
     expect(shouldReset({ resetRule: 'financial_year', periodKey: '2025-26' }, '2026-10-06')).toBe(true);
     expect(shouldReset({ resetRule: 'financial_year', periodKey: '2026-27' }, '2026-10-06')).toBe(false);
     // A never-resetting sequence must never roll over, however old it is.
