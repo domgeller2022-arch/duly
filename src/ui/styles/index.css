@@ -1,0 +1,524 @@
+/**
+ * Duly's design tokens and component layer.
+ *
+ * Tailwind 4 is imported here and nowhere else, so this file is the single
+ * stylesheet for the app. `@source` points Tailwind at the whole `src` tree:
+ * without it, class names in .tsx files are never scanned and the entire
+ * interface renders unstyled.
+ *
+ * No @import of anything remote appears in this file or in index.html. Every
+ * asset is served from this origin, which is what lets the app run with the
+ * network unplugged.
+ */
+
+@import 'tailwindcss';
+
+@source '../../';
+
+/*
+ * Tailwind 4 keeps its own preflight in a cascade layer below plain author
+ * rules, so the base layer here wins without needing !important anywhere.
+ */
+/**
+ * Design tokens.
+ *
+ * The look is "quiet stationery": warm paper, ink text, hairline rules and one
+ * confident accent. Closer to a premium notebook than a dashboard full of
+ * widgets. Every colour is defined here, in both themes, and nothing else in the
+ * app hard-codes a hex value for chrome.
+ *
+ * The accent is deep teal. It reads calm and financial, keeps strong contrast on
+ * warm paper, and does not clash with the reserved status colours. A business can
+ * set its own brand colour for its *documents*; the app interface stays teal.
+ */
+
+@theme {
+  /* ---- paper and ink ---- */
+  --color-paper: #faf8f4;
+  --color-paper-raised: #ffffff;
+  --color-paper-sunken: #f3f0ea;
+  --color-ink: #1c1b19;
+  --color-ink-muted: #6e6a63;
+  --color-ink-faint: #8a857c;
+  --color-rule: #e7e3da;
+  --color-rule-strong: #d8d2c6;
+
+  /* ---- accent ---- */
+  --color-accent: #0d9488;
+  --color-accent-hover: #0b7c72;
+  --color-accent-soft: #e0f5f3;
+  --color-accent-text: #f3f7f7;
+  --color-on-accent: #ffffff;
+
+  /* ---- status, used sparingly ---- */
+  --color-paid: #2e6b4f;
+  --color-paid-soft: #e5f0ea;
+  --color-due: #b07b3c;
+  --color-due-soft: #f8efe0;
+  --color-overdue: #9a3b36;
+  --color-overdue-soft: #f7e8e7;
+  --color-neutral: #6e6a63;
+  --color-neutral-soft: #eeebe4;
+
+  /* ---- ink-blue alternative accent, for users who prefer it ---- */
+  --color-ink-blue: #23395b;
+
+  /* ---- typography ---- */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-display: 'Fraunces', 'Source Serif 4', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ---- shape: 8px corners, hairline borders, no heavy shadows ---- */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-sheet: 0 1px 2px rgb(28 27 25 / 0.04), 0 4px 16px rgb(28 27 25 / 0.05);
+  --shadow-lifted: 0 2px 4px rgb(28 27 25 / 0.06), 0 12px 32px rgb(28 27 25 / 0.1);
+  --shadow-overlay: 0 8px 24px rgb(28 27 25 / 0.14), 0 24px 64px rgb(28 27 25 / 0.16);
+
+  /* ---- motion: 150ms, subtle ---- */
+  --ease-quiet: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- density ---- */
+  --spacing-density: 1;
+}
+
+/**
+ * Dark mode: charcoal paper, the same accent lifted for contrast.
+ *
+ * Dark mode is not an inversion. The paper becomes a warm charcoal rather than
+ * pure black, because pure black under warm accent colours looks harsh, and the
+ * rules stay visible rather than disappearing.
+ */
+@layer base {
+  :root[data-theme='dark'] {
+    --color-paper: #161514;
+    --color-paper-raised: #1f1e1c;
+    --color-paper-sunken: #121110;
+    --color-ink: #f0ece5;
+    --color-ink-muted: #a8a29a;
+    --color-ink-faint: #7d786f;
+    --color-rule: #2e2c29;
+    --color-rule-strong: #423f3b;
+
+    --color-accent: #2dd4bf;
+    --color-accent-hover: #56ded0;
+    --color-accent-soft: #1a2b2a;
+    --color-accent-text: #10201f;
+    --color-on-accent: #0d1514;
+
+    --color-paid: #6fb894;
+    --color-paid-soft: #17241d;
+    --color-due: #d6a163;
+    --color-due-soft: #26201a;
+    --color-overdue: #d98a85;
+    --color-overdue-soft: #2a1c1c;
+    --color-neutral: #a8a29a;
+    --color-neutral-soft: #242220;
+
+    --shadow-sheet: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+    --shadow-lifted: 0 2px 4px rgb(0 0 0 / 0.35), 0 12px 32px rgb(0 0 0 / 0.35);
+    --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.45), 0 24px 64px rgb(0 0 0 / 0.5);
+  }
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-rule);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+
+  /*
+   * Money columns only line up if every digit is the same width. Tabular figures
+   * are applied globally rather than per-number so a table can be built without
+   * remembering to add a class to every cell.
+   */
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-ink);
+  }
+
+  /* Comfortable vs compact density, for long line-item lists. */
+  [data-density='compact'] {
+    font-size: 13px;
+  }
+  [data-density='compact'] .density-pad {
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+  [data-density='compact'] .density-row {
+    min-height: 28px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Bundled fonts                                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Every face is served from this origin. There is no CDN link anywhere in Duly,
+ * because a font fetched over the network would make a document render
+ * differently on a machine that could not reach it — and would break entirely
+ * with the cable unplugged, which is the whole premise.
+ *
+ * `font-display: block` rather than `swap`: on an invoice, a moment of fallback
+ * text before the real serif arrives is worse than a brief pause, because a
+ * reflowed layout is what people see when they print.
+ */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('/fonts/SourceSerif4-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('/fonts/SourceSerif4-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('/fonts/SourceSerif4-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Fraunces';
+  src: url('/fonts/Fraunces-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Fraunces';
+  src: url('/fonts/Fraunces-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Fraunces';
+  src: url('/fonts/Fraunces-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Lora';
+  src: url('/fonts/Lora-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Lora';
+  src: url('/fonts/Lora-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Lora';
+  src: url('/fonts/Lora-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+/* ------------------------------------------------------------------ */
+/* Component primitives                                                */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  /* A sheet of paper: the base surface for panels and cards. */
+  .sheet {
+    background-color: var(--color-paper-raised);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sheet);
+  }
+
+  .sheet-flat {
+    background-color: var(--color-paper-raised);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+  }
+
+  /* Hairline rules, 1px, never heavier. */
+  .rule-t {
+    border-top: 1px solid var(--color-rule);
+  }
+  .rule-b {
+    border-bottom: 1px solid var(--color-rule);
+  }
+  .rule-l {
+    border-left: 1px solid var(--color-rule);
+  }
+  .rule-r {
+    border-right: 1px solid var(--color-rule);
+  }
+
+  /* Headings in the serif, data in the sans. */
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-serif {
+    font-family: var(--font-serif);
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Section eyebrow: small, letter-spaced, quiet. */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .label-quiet {
+    font-size: 12px;
+    color: var(--color-ink-muted);
+  }
+
+  /* Numbers in a column, right-aligned, always the same width. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* Focus ring used by inputs, kept consistent. */
+  .ring-accent {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 22%, transparent);
+  }
+
+  /* The subtle grain of good stationery: a very faint paper texture. */
+  .paper-grain {
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      color-mix(in oklab, var(--color-ink) 4%, transparent) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+  }
+
+  /* Scrollbars, kept quiet. */
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule-strong) transparent;
+  }
+  .scroll-quiet::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: var(--color-rule-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  .scroll-quiet::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                          */
+/* ------------------------------------------------------------------ */
+
+@keyframes duly-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes duly-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes duly-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes duly-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: duly-fade-in 150ms var(--ease-quiet) both;
+}
+.animate-rise {
+  animation: duly-rise 150ms var(--ease-quiet) both;
+}
+.animate-slide-in-right {
+  animation: duly-slide-in-right 200ms var(--ease-quiet) both;
+}
+.animate-scale-in {
+  animation: duly-scale-in 150ms var(--ease-quiet) both;
+}
+
+/* The spinners and progress used while a PDF renders. */
+@keyframes duly-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: duly-spin 900ms linear infinite;
+}
+
+/* Printing: the app chrome disappears and only the document remains. */
+@media print {
+  body {
+    background: white;
+  }
+  [data-print='hide'] {
+    display: none !important;
+  }
+  [data-print='show'] {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+  }
+}

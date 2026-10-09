@@ -1,0 +1,24 @@
+node_modules
+dist
+coverage
+dev-dist
+*.local
+.DS_Store
+.vite
+
+# Build info
+*.tsbuildinfo
+
+# Rust / Tauri build outputs (src-tauri/.gitignore covers project-level paths too)
+src-tauri/target
+src-tauri/gen/schemas
+
+# Internal audit: lists unfixed vulnerabilities, kept out of the public repo
+docs/code-audit.md
+
+# Android build outputs inside the generated project
+src-tauri/gen/android/.gradle
+src-tauri/gen/android/app/build
+src-tauri/gen/android/build
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/keystore.properties

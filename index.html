@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Duly — offline invoicing for Australian businesses. Invoices, quotes and credit notes that stay on your machine." />
+    <meta name="theme-color" content="#1F5E5B" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161514" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!--
+      No external requests of any kind. Every font, script and style is bundled,
+      because a page that fetches something is not an offline-first page. The
+      preloads below are for the fonts the shell uses, not for a third party.
+    -->
+    <link rel="preload" href="/fonts/Inter-Regular.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/fonts/Inter-Bold.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/fonts/SourceSerif4-Bold.ttf" as="font" type="font/ttf" crossorigin />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <title>Duly — invoices, duly done</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 2rem; font-family: system-ui, sans-serif; max-width: 32rem; margin: 0 auto">
+        <h1 style="font-size: 1.25rem">Duly needs JavaScript</h1>
+        <p style="color: #6e6a63">
+          Duly is a local application that runs entirely in this window — it opens its own database on your machine and
+          makes no network requests. Enable JavaScript to use it.
+        </p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
