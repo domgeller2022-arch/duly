@@ -27,7 +27,7 @@ export function createDesktopPlatform(dbName = 'duly'): Platform {
   const storage = new DexieStorageAdapter(dbName);
   const secrets = new DesktopSecretAdapter();
   const files = new DesktopFileAdapter();
-  const mail = new DesktopMailAdapter(secrets);
+  const mail = new DesktopMailAdapter();
 
   return {
     storage,

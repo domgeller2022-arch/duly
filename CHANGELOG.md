@@ -159,6 +159,56 @@ Tests: a duplicate of an inclusive, section-discounted, USD invoice for a
 client keeps all five facts and its section structure; a converted quote
 keeps the quote's client.
 
+### Remediation R5 — the desktop app does what it says
+
+- **Desktop file writes work.** The hand-rolled fs invokes did not match the
+  plugin's wire format (raw bytes in the body, the path in a header,
+  `recursive` inside `options`), so every auto-filed PDF, Save As and backup
+  write on desktop failed. The adapter now goes through the plugin's own
+  JavaScript wrapper, whose one job is that format.
+- **Path segments are sanitised** before they are ever joined onto the chosen
+  folder — a client named `../../x` can no longer write outside it (the web
+  adapter always applied this rule; the desktop one did not).
+- **Desktop email sends.** The Rust `SendArgs` never matched the camelCase
+  payload, so every send failed before reaching a server. Fields are
+  camelCase on the wire now; CC, BCC and reply-to exist instead of being
+  silently dropped; the command is async on the blocking pool, so a slow
+  SMTP conversation no longer freezes the interface; a malformed From
+  address is an error, not a panic.
+- **The password never crosses into the webview.** A real send names the
+  keychain entry and Rust resolves it; the one exception is the settings
+  screen's test connection, carrying the password the user just typed.
+- **TLS trust is explicit.** Invalid certificates are accepted only when the
+  account carries a pinned fingerprint — the user recording trust in a
+  local Bridge's certificate — never as a blanket rule for a provider or a
+  test send. A real byte-level pin needs a custom rustls verifier; that
+  ceiling is noted where the decision is made.
+- **Real sends carry the account and the PDF.** The email dialog and the
+  reminder approvals resolve the business's sending account and attach the
+  rendered PDF (on the web the attachment is the PDF the user downloads;
+  on desktop it is the SMTP attachment).
+- **Webmail opens in a new tab.** Navigating the app window to Gmail,
+  Outlook or Proton replaced the whole interface with someone else's
+  website until a restart; a `mailto:` still goes through the OS handler,
+  and the opener plugin (which was in Cargo.toml but never initialised)
+  now is.
+- **The output folder is restored on boot**, so writes stay silent after a
+  restart instead of throwing "Choose an output folder first".
+- **The tray is real.** Closing the window hides it rather than quitting —
+  schedules and reminders keep firing, which the tray existed for. The dev
+  server URL matches Vite's actual port (5183), Windows bundle targets
+  (`.msi`, NSIS `.exe`) are configured so the CI job has something to
+  upload, a real CSP replaces `null`, and the unused SQL plugin no longer
+  ships.
+- **Android, honestly:** the keyring crate has no Android store, so SMTP
+  passwords fall back to a non-persistent in-memory mock there — noted at
+  the dependency and in this changelog rather than claimed as done. A
+  Keystore-backed store is the upgrade path.
+
+Verified: `cargo check` clean for both the desktop and the Android target,
+and `tauri build` produces `Duly.app` and a `.dmg` with everything above in
+(9.84 MiB).
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

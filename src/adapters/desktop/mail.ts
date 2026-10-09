@@ -30,8 +30,6 @@ export class DesktopMailAdapter implements MailAdapter {
   readonly name = 'smtp';
   readonly canSendDirectly = true;
 
-  constructor(private readonly secrets: { get(key: string): Promise<string | null> }) {}
-
   /**
    * A real test send: one message to the given address. The plan asks for a
    * test send, because a wrong port or password is invisible until a real
@@ -46,7 +44,11 @@ export class DesktopMailAdapter implements MailAdapter {
     password: string;
     fromEmail: string;
     to: string;
+    pinnedFingerprint?: string;
   }): Promise<TestMailResult> {
+    // A test has the password in hand (the settings screen just typed or
+    // stored it) and no keychain key to name, so it goes in directly —
+    // the one place a password crosses, because the user just gave it.
     const result = await this.invokeSend({
       host: args.host,
       port: args.port,
@@ -60,7 +62,7 @@ export class DesktopMailAdapter implements MailAdapter {
       subject: 'Duly test',
       body: 'Duly test message. Your email account settings are ready to use.',
       attachments: [],
-      acceptInvalidCerts: true,
+      pinnedFingerprint: args.pinnedFingerprint ?? '',
     });
     return result;
   }
@@ -72,11 +74,11 @@ export class DesktopMailAdapter implements MailAdapter {
 
     const account = request.accountId ? await this.accountConfig(request.accountId) : null;
 
-    // The password lives in the keychain under the account's secretRef.
+    // The password never crosses into the webview: Rust resolves it from the
+    // keychain by the secret key named here.
     const secretKey =
       account?.secretRef ||
       (request.accountId ? `${KEY_PREFIX}${request.accountId}` : `${KEY_PREFIX}default`);
-    const password = await this.secrets.get(secretKey);
 
     return await this.invokeSend({
       host: account?.host ?? '',
@@ -84,10 +86,13 @@ export class DesktopMailAdapter implements MailAdapter {
       secure: account?.secure ?? false,
       starttls: account?.starttls ?? true,
       username: account?.username ?? '',
-      password: password ?? '',
+      secretKey,
       fromName: request.fromName,
       fromEmail: request.fromEmail,
+      replyTo: request.replyTo || undefined,
       to: request.to,
+      cc: request.cc,
+      bcc: request.bcc,
       subject: request.subject,
       body: request.body,
       attachments: request.attachments.map((a) => ({
@@ -95,7 +100,8 @@ export class DesktopMailAdapter implements MailAdapter {
         data: payloadData(a.content),
         mimeType: a.mimeType,
       })),
-      acceptInvalidCerts: account?.acceptInvalidCerts ?? false,
+      // Trust is explicit: a configured fingerprint, never a provider blanket.
+      pinnedFingerprint: account?.pinnedFingerprint ?? '',
     });
   }
 
@@ -107,7 +113,7 @@ export class DesktopMailAdapter implements MailAdapter {
     starttls: boolean;
     username: string;
     secretRef: string;
-    acceptInvalidCerts: boolean;
+    pinnedFingerprint: string;
   } | null> {
     const { storage } = await import('../index');
     const accounts = await storage().listEmailAccounts();
@@ -121,9 +127,7 @@ export class DesktopMailAdapter implements MailAdapter {
       // Bridge sends from a generated username; the others send from the address.
       username: account.bridgeGeneratedUsername || account.fromEmail,
       secretRef: account.secretRef,
-      // A local Bridge presents its own certificate; a pinned fingerprint is the
-      // user explicitly trusting it. Either way the handshake must not fail.
-      acceptInvalidCerts: account.provider === 'proton_bridge' || account.pinnedCertificateFingerprint !== '',
+      pinnedFingerprint: account.pinnedCertificateFingerprint,
     };
   }
 
@@ -149,14 +153,19 @@ export class DesktopMailAdapter implements MailAdapter {
     secure: boolean;
     starttls: boolean;
     username: string;
-    password: string;
+    /** A test connection carries the password; a real send names its keychain key. */
+    password?: string;
+    secretKey?: string;
     fromName: string;
     fromEmail: string;
+    replyTo?: string;
     to: string[];
+    cc?: string[];
+    bcc?: string[];
     subject: string;
     body: string;
     attachments: { fileName: string; data: string; mimeType: string }[];
-    acceptInvalidCerts: boolean;
+    pinnedFingerprint?: string;
   }): Promise<SendMailResult> {
     try {
       const result = await invoke<{ ok: boolean; error: string | null }>('send_smtp', { args });

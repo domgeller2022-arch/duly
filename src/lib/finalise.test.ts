@@ -124,7 +124,6 @@ describe('finalising a credit note', () => {
       client,
       taxCodes: [...DEFAULT_TAX_CODES],
       template: null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       settings: settings() as any,
     });
 
@@ -164,7 +163,6 @@ describe('finalising a credit note', () => {
       client,
       taxCodes: [...DEFAULT_TAX_CODES],
       template: null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       settings: settings() as any,
     });
 
@@ -218,7 +216,6 @@ describe('client credit is spent when the invoice is finalised', () => {
       client,
       taxCodes: [...DEFAULT_TAX_CODES],
       template: null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       settings: settings() as any,
     });
 

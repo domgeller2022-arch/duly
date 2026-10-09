@@ -4,32 +4,59 @@
  * The web build uses the File System Access API and re-asks permission when a
  * session's grant lapses. The desktop build has none of that friction: a
  * folder is chosen once through the dialog plugin, and every write after that
- * is silent — which is the plan's acceptance for Phase 6 on desktop.
+ * is silent.
  *
- * A `FileHandleRef.token` is the absolute path; "permission" on desktop just
- * means the folder still exists.
+ * Every fs call goes through the plugin's own JavaScript wrapper
+ * (`@tauri-apps/plugin-fs`), not hand-rolled invokes: the plugin's wire
+ * format (raw bytes in the body, the path in a header, `recursive` inside
+ * `options`) is the wrapper's job to get right, and the hand-rolled version
+ * got it wrong — every desktop write failed with "unexpected invoke body".
+ *
+ * A `FileHandleRef.token` is the absolute path. Each path segment is
+ * sanitised before it is ever joined, so a client named "../../x" cannot
+ * write outside the chosen folder — the same rule the web adapter applies.
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { exists, mkdir, readDir, readTextFile, remove, writeFile } from '@tauri-apps/plugin-fs';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import type { FileAdapter, FileHandleRef } from '../types';
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
+/** One safe path segment: no separators, no traversal, no control bytes. */
+function safeSegment(segment: string): string {
+  const cleaned = segment
+    .replace(/[\\/:*?"<>|]/g, '-')
+    // eslint-disable-next-line no-control-regex -- stripping control bytes is the point
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .slice(0, 180);
+  return cleaned || 'untitled';
+}
+
+/** Join the chosen folder with a sanitised relative path. */
+function resolvePath(folder: string, relativePath: string): string {
+  const segments = relativePath
+    .split(/[\\/]/)
+    .filter((part) => part && part !== '.' && part !== '..')
+    .map(safeSegment);
+  return [folder, ...segments].join('/');
+}
+
 /** Write bytes or text to an absolute path, creating parents. */
 async function writeAbs(path: string, data: Blob | string): Promise<void> {
   const dir = path.split(/[\\/]/).slice(0, -1).join('/');
-  if (dir) {
-    const exists = await invoke<boolean>('plugin:fs|exists', { path: dir });
-    if (!exists) await invoke('plugin:fs|mkdir', { path: dir, recursive: true });
-  }
+  if (dir && !(await exists(dir))) await mkdir(dir, { recursive: true });
   if (typeof data === 'string') {
-    await invoke('plugin:fs|write_text_file', { path, contents: data });
+    await writeFile(path, new TextEncoder().encode(data));
     return;
   }
   const bytes = new Uint8Array(await data.arrayBuffer());
-  await invoke('plugin:fs|write_file', { path, contents: bytes.buffer });
+  await writeFile(path, bytes);
 }
 
 export class DesktopFileAdapter implements FileAdapter {
@@ -42,23 +69,22 @@ export class DesktopFileAdapter implements FileAdapter {
   }
 
   async chooseOutputFolder(): Promise<FileHandleRef | null> {
-    const path = await invoke<string | null>('plugin:dialog|open', {
-      options: { directory: true, title: 'Choose the output folder' },
-    });
-    if (!path) return null;
+    const path = await openDialog({ directory: true, title: 'Choose the output folder' });
+    if (!path || Array.isArray(path)) return null;
     this.outputFolder = path;
     return { token: path, name: baseName(path) };
   }
 
   async restoreFolder(ref: FileHandleRef): Promise<FileHandleRef | null> {
-    const exists = await invoke<boolean>('plugin:fs|exists', { path: ref.token });
-    if (!exists) return null;
+    // Permissions are implicit on desktop: restored whenever the folder still
+    // exists — which is the whole point of persisting the path.
+    if (!(await exists(ref.token))) return null;
     this.outputFolder = ref.token;
     return ref;
   }
 
   async verifyPermission(ref: FileHandleRef, _mode: 'read' | 'readwrite'): Promise<boolean> {
-    return await invoke<boolean>('plugin:fs|exists', { path: ref.token });
+    return await exists(ref.token);
   }
 
   /** A desktop never withdraws permission — re-verify, and re-pick if gone. */
@@ -66,14 +92,14 @@ export class DesktopFileAdapter implements FileAdapter {
     if (await this.verifyPermission(ref, mode)) return true;
     const fresh = await this.chooseOutputFolder();
     if (!fresh) return false;
-    this.outputFolder = mode === 'readwrite' ? fresh.token : this.outputFolder;
+    this.outputFolder = fresh.token;
     return true;
   }
 
   async writeFile(relativePath: string, data: Blob | string): Promise<string> {
     const folder = this.outputFolder;
     if (!folder) throw new Error('Choose an output folder first — the setting remembers it.');
-    const path = `${folder}/${relativePath}`;
+    const path = resolvePath(folder, relativePath);
     await writeAbs(path, data);
     return path;
   }
@@ -81,36 +107,35 @@ export class DesktopFileAdapter implements FileAdapter {
   async readFile(relativePath: string): Promise<string> {
     const folder = this.outputFolder;
     if (!folder) throw new Error('Choose an output folder first.');
-    return await invoke<string>('plugin:fs|read_text_file', { path: `${folder}/${relativePath}` });
+    return await readTextFile(resolvePath(folder, relativePath));
   }
 
   async exists(relativePath: string): Promise<boolean> {
     const folder = this.outputFolder;
     if (!folder) return false;
-    return await invoke<boolean>('plugin:fs|exists', { path: `${folder}/${relativePath}` });
+    return await exists(resolvePath(folder, relativePath));
   }
 
   async deleteFile(relativePath: string): Promise<void> {
     const folder = this.outputFolder;
     if (!folder) return;
-    await invoke('plugin:fs|remove', { path: `${folder}/${relativePath}` });
+    await remove(resolvePath(folder, relativePath));
   }
 
   async listFiles(relativePath = ''): Promise<string[]> {
     const folder = this.outputFolder;
     if (!folder) return [];
-    const path = relativePath ? `${folder}/${relativePath}` : folder;
-    const exists = await invoke<boolean>('plugin:fs|exists', { path });
-    if (!exists) return [];
-    const entries = await invoke<{ name: string }[]>('plugin:fs|read_dir', { path });
-    return entries.map((entry) => (relativePath ? `${relativePath}/${entry.name}` : entry.name));
+    const path = relativePath ? resolvePath(folder, relativePath) : folder;
+    if (!(await exists(path))) return [];
+    const entries = await readDir(path);
+    return entries.map((entry) =>
+      relativePath ? `${relativePath}/${entry.name}` : entry.name,
+    );
   }
 
   /** A save panel, not a download. */
   async saveAs(fileName: string, data: Blob | string): Promise<void> {
-    const path = await invoke<string | null>('plugin:dialog|save', {
-      options: { defaultPath: fileName, title: 'Save' },
-    });
+    const path = await saveDialog({ defaultPath: fileName });
     if (!path) return;
     await writeAbs(path, data);
   }
@@ -118,14 +143,13 @@ export class DesktopFileAdapter implements FileAdapter {
   async revealInFolder(relativePath: string): Promise<void> {
     const folder = this.outputFolder;
     if (!folder) return;
-    await invoke('reveal_in_folder', { path: `${folder}/${relativePath}` });
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('reveal_in_folder', { path: resolvePath(folder, relativePath) });
   }
 
   async chooseBackupFolder(): Promise<FileHandleRef | null> {
-    const path = await invoke<string | null>('plugin:dialog|open', {
-      options: { directory: true, title: 'Choose the backup folder' },
-    });
-    if (!path) return null;
+    const path = await openDialog({ directory: true, title: 'Choose the backup folder' });
+    if (!path || Array.isArray(path)) return null;
     return { token: path, name: baseName(path) };
   }
 }

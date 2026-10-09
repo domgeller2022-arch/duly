@@ -62,10 +62,13 @@ export function RemindersScreen() {
     const client = clients.find((c) => c.id === document?.clientId) ?? null;
     const to = client?.email ? [client.email] : [];
 
+    const sendingProfile = useAppStore
+      .getState()
+      .profiles.find((p) => p.id === document?.profileId);
     const result = await platform().mail.send({
-      accountId: null,
-      fromName: '',
-      fromEmail: '',
+      accountId: sendingProfile?.sendingEmailAccountId ?? null,
+      fromName: sendingProfile?.name ?? '',
+      fromEmail: sendingProfile?.email ?? '',
       to,
       subject: reminder.subject,
       body: reminder.body,
@@ -122,14 +125,20 @@ export function RemindersScreen() {
   const sendReady = async (entryId: string) => {
     const entry = outbox.find((o) => o.id === entryId);
     if (!entry) return;
+    const sendingProfile = useAppStore.getState().profiles.find(
+      (p) => p.id === (documents.find((d) => d.id === entry.documentId)?.profileId),
+    );
     const result = await platform().mail.send({
-      accountId: null,
-      fromName: '',
-      fromEmail: '',
+      accountId: sendingProfile?.sendingEmailAccountId ?? null,
+      fromName: sendingProfile?.name ?? '',
+      fromEmail: sendingProfile?.email ?? '',
       to: entry.to,
       subject: entry.subject,
       body: entry.body,
-      attachments: [],
+      // The outbox keeps the rendered PDF when one was queued with the send.
+      attachments: entry.pdfDataUrl
+        ? [{ fileName: `${documents.find((d) => d.id === entry.documentId)?.number ?? 'document'}.pdf`, content: entry.pdfDataUrl, mimeType: 'application/pdf' }]
+        : [],
     });
     await saveOutboxEntry({
       ...entry,

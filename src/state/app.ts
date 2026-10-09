@@ -157,6 +157,23 @@ export function installPlatform(): void {
   if (installed) return;
   setPlatform(isTauri() ? createDesktopPlatform() : createWebPlatform());
   installed = true;
+
+  // Desktop: the output folder the user chose is a path, and permissions are
+  // implicit — restoring it on boot is what makes every write after a
+  // restart silent instead of throwing "Choose an output folder first".
+  if (isTauri()) {
+    void (async () => {
+      try {
+        const settings = await storage().getSettings();
+        if (settings?.outputFolderHandle) {
+          await platform().files.restoreFolder({ token: settings.outputFolderHandle, name: settings.outputFolderName });
+        }
+      } catch {
+        // A failed restore is not fatal: the next write re-asks via
+        // requestPermission, which re-opens the picker.
+      }
+    })();
+  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({

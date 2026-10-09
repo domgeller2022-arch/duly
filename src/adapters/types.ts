@@ -405,6 +405,8 @@ export interface MailAdapter {
     password: string;
     fromEmail: string;
     to: string;
+    /** A configured fingerprint lets a trusted local Bridge's certificate pass. */
+    pinnedFingerprint?: string;
   }): Promise<TestMailResult>;
 
   send(request: SendMailRequest): Promise<SendMailResult>;

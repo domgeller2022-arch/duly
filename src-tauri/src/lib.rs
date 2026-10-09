@@ -17,7 +17,12 @@ use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{Message, SmtpTransport, Transport};
 use serde::{Deserialize, Serialize};
 
+/// Field names are camelCase on the wire, matching the TypeScript side.
+/// Tauri's camelCase handling covers command *parameters*, not nested
+/// struct fields — without this, every send failed with a serde
+/// "missing field" error.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SendArgs {
     host: String,
     port: u16,
@@ -25,21 +30,32 @@ struct SendArgs {
     secure: bool,
     starttls: bool,
     username: String,
-    /// Resolved from the keychain by the caller, never stored here.
-    password: String,
+    /// The keychain entry the password lives under. Resolved here, in
+    /// Rust: the password never crosses into the webview.
+    secret_key: String,
+    /// Only the settings screen's test connection sets this, with the
+    /// password the user just typed before it was stored.
+    #[serde(default)]
+    password: Option<String>,
     from_name: String,
     from_email: String,
+    reply_to: Option<String>,
     to: Vec<String>,
+    cc: Option<Vec<String>>,
+    bcc: Option<Vec<String>>,
     subject: String,
     body: String,
     /// (fileName, base64) pairs — lettre takes bytes.
     attachments: Vec<AttachmentArg>,
-    /// Proton Mail Bridge presents its own certificate; trusting it is the
-    /// plan's "trusted Bridge certificate".
-    accept_invalid_certs: bool,
+    /// A pinned fingerprint means the user explicitly trusted this
+    /// server's certificate (a local Bridge presents its own). Without
+    /// one, normal TLS verification applies — invalid certificates are
+    /// only ever accepted against a configured trust.
+    pinned_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AttachmentArg {
     file_name: String,
     /// base64-encoded.
@@ -55,8 +71,39 @@ struct SendResult {
 
 /// Send one message through SMTP. Nothing is stored; the outbox lives in the
 /// database and the caller marks entries sent or failed.
+///
+/// Async and moved to the blocking pool: an SMTP conversation can run for
+/// seconds, and a synchronous command would freeze the interface for all of
+/// it.
 #[tauri::command]
-fn send_smtp(args: SendArgs) -> SendResult {
+async fn send_smtp(args: SendArgs) -> SendResult {
+    tauri::async_runtime::spawn_blocking(move || send_smtp_blocking(args))
+        .await
+        .unwrap_or(SendResult {
+            ok: false,
+            error: Some("The send task itself failed.".into()),
+        })
+}
+
+fn send_smtp_blocking(args: SendArgs) -> SendResult {
+    // The password is resolved from the OS keychain here, in Rust — it never
+    // crosses into the webview on a real send. The one exception is the
+    // settings screen's test connection, which carries the password the
+    // user has just typed.
+    let password = match args.password.clone() {
+        Some(typed) => typed,
+        None => match keychain_get(args.secret_key.clone()) {
+            Ok(Some(secret)) => secret,
+            Ok(None) => {
+                return SendResult {
+                    ok: false,
+                    error: Some("No password is saved for this account. Add it in Settings → Email accounts.".into()),
+                }
+            }
+            Err(error) => return SendResult { ok: false, error: Some(error) },
+        },
+    };
+
     // Recipients first: a bad address fails before a connection is made.
     let mut mailboxes = Vec::new();
     for address in &args.to {
@@ -77,18 +124,50 @@ fn send_smtp(args: SendArgs) -> SendResult {
         };
     }
 
-    let from: Mailbox = format!("{} <{}>", args.from_name, args.from_email)
-        .parse()
-        .unwrap_or_else(|_| args.from_email.parse().unwrap());
+    // A malformed From is an error, not a panic — an unwrap here took the
+    // whole app down over a typo.
+    let from: Mailbox = match format!("{} <{}>", args.from_name, args.from_email).parse() {
+        Ok(mailbox) => mailbox,
+        Err(_) => match args.from_email.parse() {
+            Ok(mailbox) => mailbox,
+            Err(_) => {
+                return SendResult {
+                    ok: false,
+                    error: Some("The From address is not a valid email address.".into()),
+                }
+            }
+        },
+    };
 
-    let transport = match smtp_transport(&args) {
+    let transport = match smtp_transport(&args, &password) {
         Ok(transport) => transport,
         Err(error) => return SendResult { ok: false, error: Some(error) },
     };
 
     let mut message = Message::builder().from(from).to(mailboxes[0].clone());
+    // Extra To recipients are To; CC and BCC are what the caller said they
+    // were, not quietly demoted.
     for extra in &mailboxes[1..] {
-        message = message.cc(extra.clone());
+        message = message.to(extra.clone());
+    }
+    if let Some(cc) = &args.cc {
+        for address in cc {
+            if let Ok(mailbox) = address.parse::<Mailbox>() {
+                message = message.cc(mailbox);
+            }
+        }
+    }
+    if let Some(bcc) = &args.bcc {
+        for address in bcc {
+            if let Ok(mailbox) = address.parse::<Mailbox>() {
+                message = message.bcc(mailbox);
+            }
+        }
+    }
+    if let Some(reply_to) = &args.reply_to {
+        if let Ok(mailbox) = reply_to.parse::<Mailbox>() {
+            message = message.reply_to(mailbox);
+        }
     }
     let message = message.subject(args.subject.clone());
 
@@ -125,12 +204,23 @@ fn send_smtp(args: SendArgs) -> SendResult {
     }
 }
 
-/// The transport for one send: implicit TLS, STARTTLS, or plain — with the
-/// Bridge's own certificate accepted when the account says so.
-fn smtp_transport(args: &SendArgs) -> Result<SmtpTransport, String> {
+/// The transport for one send: implicit TLS, STARTTLS, or plain.
+///
+/// Invalid certificates are accepted only when the account carries a pinned
+/// fingerprint — the user explicitly trusting this server's certificate —
+/// never as a blanket rule for a provider or a test send.
+/// ponytail: a true byte-level fingerprint comparison needs a custom rustls
+/// verifier; accept-invalid-certs-gated-on-explicit-trust is the ceiling
+/// until one is wired in.
+fn smtp_transport(args: &SendArgs, password: &str) -> Result<SmtpTransport, String> {
     let wants_tls = args.secure || args.starttls;
+    let trusted = args
+        .pinned_fingerprint
+        .as_deref()
+        .map(|f| !f.trim().is_empty())
+        .unwrap_or(false);
 
-    let mut builder = if args.accept_invalid_certs && wants_tls {
+    let mut builder = if trusted && wants_tls {
         let mut tls_builder = TlsParameters::builder(args.host.clone());
         tls_builder = tls_builder.dangerous_accept_invalid_certs(true);
         let params = tls_builder
@@ -149,7 +239,7 @@ fn smtp_transport(args: &SendArgs) -> Result<SmtpTransport, String> {
 
     builder = builder.port(args.port);
     if !args.username.is_empty() {
-        builder = builder.credentials(Credentials::new(args.username.clone(), args.password.clone()));
+        builder = builder.credentials(Credentials::new(args.username.clone(), password.to_string()));
     }
     Ok(builder.build())
 }
@@ -237,9 +327,9 @@ fn keychain_delete(account: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init());
 
     // Autostart is a desktop login item; Android has no equivalent.
     #[cfg(desktop)]
@@ -284,6 +374,19 @@ pub fn run() {
                         _ => {}
                     })
                     .build(app)?;
+
+                // Closing the window hides it rather than quitting: the tray
+                // is what keeps schedules and reminders firing, so the plan's
+                // "runs while the window is closed" is actually true now.
+                if let Some(window) = app.get_webview_window("main") {
+                    let handle = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            let _ = handle.hide();
+                            api.prevent_close();
+                        }
+                    });
+                }
             }
             Ok(())
         })

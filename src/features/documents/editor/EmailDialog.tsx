@@ -192,7 +192,7 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         status: 'waiting',
         cc: [],
         bcc: [],
-        accountId: null,
+        accountId: useAppStore.getState().profiles.find((p) => p.id === document.profileId)?.sendingEmailAccountId ?? null,
         attachmentNames: [],
         pdfPath: null,
         pdfDataUrl: null,
@@ -245,14 +245,37 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
+      // A real send goes through the business's sending account, with the
+      // rendered PDF attached. On the web the attachment is the PDF the
+      // user downloads to attach; on desktop it is the SMTP attachment.
+      let pdfPayload: { fileName: string; content: string; mimeType: string }[] = [];
+      try {
+        const blob = await pdfBlob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error ?? new Error('Could not read the PDF'));
+          reader.readAsDataURL(blob);
+        });
+        pdfPayload = [
+          {
+            fileName: `${document.number || document.id}.pdf`,
+            content: dataUrl,
+            mimeType: 'application/pdf',
+          },
+        ];
+      } catch {
+        // No PDF, no attachment: the send still goes out.
+      }
+
       const mailResult = await platform().mail.send({
-        accountId: null,
+        accountId: useAppStore.getState().profiles.find((p) => p.id === document.profileId)?.sendingEmailAccountId ?? null,
         fromName: profile?.name ?? '',
         fromEmail: profile?.email ?? '',
         to: recipients,
         subject,
         body,
-        attachments: [],
+        attachments: pdfPayload,
       });
       await storage().saveEmailLog({
         ...newEntity({}),
@@ -268,8 +291,8 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         via: mailResult.via,
         cc: [],
         bcc: [],
-        accountId: null,
-        attachmentNames: [],
+        accountId: useAppStore.getState().profiles.find((p) => p.id === document.profileId)?.sendingEmailAccountId ?? null,
+        attachmentNames: pdfPayload.map((a) => a.fileName),
         notes: '',
       });
       push({

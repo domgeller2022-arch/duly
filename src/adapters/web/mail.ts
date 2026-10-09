@@ -202,7 +202,14 @@ function truncate(value: string, max: number): string {
 function openUrl(href: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    window.location.href = href;
+    // A webmail compose URL opens in a new tab: navigating the app window
+    // there replaced the whole interface with someone else's website until
+    // a restart. A mailto: still goes through the OS handler.
+    if (href.startsWith('mailto:')) {
+      window.location.href = href;
+    } else {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    }
     return true;
   } catch {
     return false;
