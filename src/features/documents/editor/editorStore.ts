@@ -497,9 +497,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
         lines,
         suggestions: searchCatalogue(query, state.items, recent, state.document),
         autocompleteIndex: 0,
+        // A description edit is a real edit: without the dirty flag the
+        // autosave found nothing to do, and the description typed straight
+        // after a structural change was lost on reload. The keystroke is
+        // still not a history entry — Ctrl+Z undoes the last structural
+        // change, not every character.
+        dirty: true,
       });
-      // The keystroke itself is not a history entry: holding Ctrl+Z should undo
-      // the last structural change, not every character.
       scheduleSave();
     },
 

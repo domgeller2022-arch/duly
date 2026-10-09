@@ -12,7 +12,7 @@
 
 import type { AutomationLogEntry } from '@/core/schemas/automation';
 import { newEntity } from '@/core/schemas/common';
-import { storage } from '@/adapters';
+import { platform, storage } from '@/adapters';
 import { useAppStore } from '@/state/app';
 import { runRecurringSchedules } from './recurring';
 import { runOverdueFlagging, runQuoteExpiry } from './overdue';
@@ -80,6 +80,45 @@ export async function runSchedulerPass(now: string): Promise<SchedulerRunResult>
   };
 
   try {
+    /* ---- 0. the daily backup ---- */
+    //
+    // Once a day: a snapshot is written into the chosen backup folder —
+    // silent on desktop, best-effort on the web where a folder grant only
+    // lasts the session — and the restorable copy lands inside the database.
+    // A failure is logged, never fatal: the restorable copy already exists.
+    try {
+      const backups = await storage().listBackups();
+      const todayKey = `daily-${now.slice(0, 10)}`;
+      if (!backups.some((b) => b.name === todayKey)) {
+        const info = await storage().createBackup(todayKey);
+        if (settings.backupFolderName) {
+          try {
+            const snapshot = await storage().exportSnapshot();
+            await platform().files.writeFile(`duly-backup-${todayKey}.json`, JSON.stringify(snapshot, null, 2));
+            await log({
+              category: 'backup',
+              message: `Daily backup written (${(info.sizeBytes / 1024).toFixed(0)} kB) to ${settings.backupFolderName}.`,
+              entity: 'backup',
+              entityId: info.id,
+              detail: '',
+            });
+          } catch {
+            await log({
+              category: 'backup',
+              message: 'Daily backup kept inside Duly; the backup folder could not be written.',
+              entity: 'backup',
+              entityId: info.id,
+              needsAttention: true,
+              detail:
+                'On the web the folder grant lasts only the session — re-choose it in Settings → Files, or use the desktop build for silent backups.',
+            });
+          }
+        }
+      }
+    } catch (error) {
+      errors.push(`Daily backup: ${describe(error)}`);
+    }
+
     /* ---- 1. recurring schedules ---- */
     if (settings.runRecurring) {
       try {

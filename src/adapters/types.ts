@@ -134,6 +134,8 @@ export interface StorageAdapter {
   init(): Promise<void>;
   close(): Promise<void>;
   readonly schemaVersion: number;
+  /** The browser's answer to the durable-storage request, once asked. */
+  persisted: boolean | null;
 
   /* settings */
   getSettings(): Promise<Settings>;

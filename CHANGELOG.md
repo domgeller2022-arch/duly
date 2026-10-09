@@ -247,6 +247,46 @@ and `tauri build` produces `Duly.app` and a `.dmg` with everything above in
 - **The AI invoice dialog honours the reviewed due days** instead of
   collecting them and quietly dropping them.
 
+### Remediation R7 — the data is safe, and the safety is honest
+
+- **Typed descriptions autosave.** A description-only edit never marked the
+  document dirty, so the autosave found nothing to do and the leave-guards
+  never fired: the most-typed field on the screen was silently lost on
+  reload. Proven in the browser before (the text vanished) and after (it
+  survives). The keystroke still is not an undo step.
+- **Deleted records actually disappear.** The client list had no soft-delete
+  filter at all, and the business-profile list's filter was inverted — a
+  deleted business stayed in the switcher, a deleted client stayed in every
+  picker. Both follow the same rule as items and documents now.
+- **A replace-import replaces.** Tables the snapshot holds none of were
+  skipped before their clear, so their rows survived their own deletion; a
+  client could survive a restore of a snapshot with no clients. Replace
+  clears every table first.
+- **The import path validates.** Every row parses through its table's Zod
+  schema — a hand-edited or older file puts a well-formed record in or
+  nothing at all, and rows are skipped and counted, never thrown away. An
+  unknown key in the file skips instead of failing the whole import, and a
+  snapshot from a newer schema is refused at the door (`assertSchemaSupported`
+  existed for exactly this and was never called).
+- **Durable storage is requested — and reported.** The app never called
+  `navigator.storage.persist()`, so the browser could evict the only copy of
+  the data under storage pressure. It is asked on boot, and the Data screen
+  states which way the browser answered.
+- **The daily backup exists.** Once a day, a snapshot is written into the
+  chosen backup folder — silent on desktop, best-effort on the web where a
+  folder grant lasts the session (the automation log says which, and why) —
+  and the restorable copy lands inside the database with the pre-import
+  backups. Before, the backup folder could be chosen and nothing was ever
+  written to it.
+- **An issued invoice is voided, not deleted.** The delete affordance is
+  back to drafts only: a numbered document is a tax record with a spent
+  number, and the list says so instead of offering to remove it from the
+  BAS.
+
+Tests: replace clears empty tables, merge preserves them, a newer-schema
+snapshot is refused, malformed rows skip, unknown keys skip (5 storage
+tests, new file); the description probe re-run green.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

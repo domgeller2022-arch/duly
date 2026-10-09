@@ -82,11 +82,54 @@ import {
   timeEntrySchema,
 } from '@/core/schemas';
 import { DEFAULT_TAX_CODES } from '@/core/tax/tax';
+import { emailAccountSchema } from '@/core/schemas/settings';
 import { DEFAULT_PATTERNS } from '@/core/schemas/automation';
 import { financialYearKey, todayIn } from '@/core/validation/dates';
 import { nextCounterValue, periodKeyFor, renderNumber, shouldReset } from '@/core/engines/numbering';
 import type { BackupInfo, DataSnapshot, DocumentBundleRecord, QueryOptions, StorageAdapter } from '../types';
-import { SCHEMA_VERSION, appVersion } from './version';
+import { SCHEMA_VERSION, appVersion, assertSchemaSupported } from './version';
+
+/**
+ * Every imported row validates through its table's schema: a hand-edited or
+ * older file either puts a well-formed record in or nothing at all. A row
+ * from a newer schema is skipped rather than corrupting the table.
+ */
+const ROW_VALIDATORS: Record<string, (row: unknown) => unknown> = {
+  settings: settingsSchema.parse,
+  businessProfiles: businessProfileSchema.parse,
+  clients: clientSchema.parse,
+  contacts: contactSchema.parse,
+  items: itemSchema.parse,
+  // Tax codes are seeded rows with a plain interface; stored whole.
+  currencyRates: currencyRateSchema.parse,
+  customFields: customFieldSchema.parse,
+  documents: documentSchema.parse,
+  documentLines: documentLineSchema.parse,
+  payments: paymentSchema.parse,
+  designTemplates: designTemplateSchema.parse,
+  contentPresets: contentPresetSchema.parse,
+  emailTemplates: emailTemplateSchema.parse,
+  emailLogs: emailLogSchema.parse,
+  outbox: outboxSchema.parse,
+  recurringSchedules: recurringScheduleSchema.parse,
+  numberSequences: numberSequenceSchema.parse,
+  rules: ruleSchema.parse,
+  reminderPolicies: reminderPolicySchema.parse,
+  lateFeePolicies: lateFeePolicySchema.parse,
+  reminders: reminderSchema.parse,
+  attachments: attachmentSchema.parse,
+  auditLog: auditLogSchema.parse,
+  automationLog: automationLogSchema.parse,
+  clientCredits: clientCreditSchema.parse,
+  signatures: signatureSchema.parse,
+  bankTransactions: bankTransactionSchema.parse,
+  savedViews: savedViewSchema.parse,
+  projects: projectSchema.parse,
+  timeEntries: timeEntrySchema.parse,
+  expenses: expenseSchema.parse,
+  retainers: retainerSchema.parse,
+  emailAccounts: emailAccountSchema.parse,
+};
 
 /* ------------------------------------------------------------------ */
 /* Schema                                                              */
@@ -220,6 +263,16 @@ export class DexieStorageAdapter implements StorageAdapter {
     if (this.ready) return;
     await this.db.open();
     await this.seed();
+    // Ask the browser for durable storage: without it, storage pressure can
+    // evict the only copy of the user's data. The answer is the browser's, so
+    // the Data screen reports which way it went rather than assuming.
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+      try {
+        this.persisted = await navigator.storage.persist();
+      } catch {
+        this.persisted = false;
+      }
+    }
     this.ready = true;
   }
 
@@ -227,6 +280,9 @@ export class DexieStorageAdapter implements StorageAdapter {
     this.db.close();
     this.ready = false;
   }
+
+/** The browser's answer to the durable-storage request, for the Data screen. */
+  persisted: boolean | null = null;
 
   get schemaVersion(): number {
     return SCHEMA_VERSION;
@@ -261,8 +317,11 @@ export class DexieStorageAdapter implements StorageAdapter {
 
   async listBusinessProfiles(options?: QueryOptions): Promise<BusinessProfile[]> {
     const rows = await this.db.businessProfiles.toArray();
+    // Soft-deleted rows are hidden unless explicitly asked for — the same
+    // rule as items and documents. The filter used to be inverted, so a
+    // deleted business stayed in the switcher until it was asked for.
     return applyQuery(
-      rows.filter((r) => !options?.includeDeleted || !r.deletedAt),
+      rows.filter((r) => options?.includeDeleted || !r.deletedAt),
       options,
     );
   }
@@ -285,7 +344,12 @@ export class DexieStorageAdapter implements StorageAdapter {
 
   async listClients(options?: QueryOptions): Promise<Client[]> {
     const rows = await this.db.clients.toArray();
-    return applyQuery(rows, options);
+    // Delete appeared to do nothing: the soft-deleted client stayed in every
+    // picker and list, because this was the one list without the filter.
+    return applyQuery(
+      rows.filter((r) => options?.includeDeleted || !r.deletedAt),
+      options,
+    );
   }
 
   getClient(id: string): Promise<Client | undefined> {
@@ -1016,6 +1080,11 @@ export class DexieStorageAdapter implements StorageAdapter {
     snapshot: DataSnapshot,
     mode: 'replace' | 'merge',
   ): Promise<{ imported: number; skipped: number }> {
+    // A backup from a newer schema is refused rather than silently opened:
+    // its rows would be skipped or misread, and the user would believe their
+    // data had come back when it had not.
+    assertSchemaSupported(snapshot.schemaVersion ?? 1);
+
     // A pre-import backup, so a bad import can never be the end of the data.
     if (mode === 'replace') {
       await this.createBackup(`before-import-${Date.now()}`);
@@ -1069,8 +1138,16 @@ export class DexieStorageAdapter implements StorageAdapter {
       async () => {
         for (const name of tableNames) {
           const rows = (snapshot[name] as unknown[]) ?? [];
-          if (rows.length === 0) continue;
           const table = (this.db as unknown as Record<string, Table>)[name as string];
+          if (!table) {
+            // An unknown key in the file (a hand-edited export, a future
+            // schema) skips rather than throwing the whole import away.
+            skipped += rows.length;
+            continue;
+          }
+          // "Replace" clears every table in the snapshot's world — including
+          // the ones it holds none of, which is exactly how a table's rows
+          // used to survive their own deletion.
           if (mode === 'replace') await table.clear();
           for (const row of rows) {
             const record = row as { id?: string };
@@ -1078,8 +1155,16 @@ export class DexieStorageAdapter implements StorageAdapter {
               skipped += 1;
               continue;
             }
-            await table.put(row);
-            imported += 1;
+            // Every row validates through its table's schema: a hand-edited
+            // or older file puts a well-formed record in or nothing at all.
+            const validator = ROW_VALIDATORS[name as keyof typeof ROW_VALIDATORS];
+            try {
+              const parsed = validator ? validator(record) : record;
+              await table.put(parsed);
+              imported += 1;
+            } catch {
+              skipped += 1;
+            }
           }
         }
 

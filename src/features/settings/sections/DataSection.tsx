@@ -49,12 +49,14 @@ export function DataSection() {
     { id: string; name: string; createdAt: string; sizeBytes: number }[]
   >([]);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
   const [pending, setPending] = useState<{ snapshot: DataSnapshot; fileName: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reload = async () => {
     setUsage(await storage().estimateSize());
     setBackups(await storage().listBackups());
+    setPersisted(storage().persisted);
   };
 
   useEffect(() => {
@@ -162,7 +164,14 @@ export function DataSection() {
 
   return (
     <div className="space-y-4">
-      <Panel title="What is in your database" description="Everything Duly holds, all on this machine.">
+      <Panel
+        title="What is in your database"
+        description={
+          persisted === false
+            ? 'Everything Duly holds, all on this machine. The browser has not granted durable storage, so it may evict data under storage pressure — keep a JSON export.'
+            : 'Everything Duly holds, all on this machine. Durable storage is granted; the browser will not evict it.'
+        }
+      >
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Count label="Businesses" value={profiles.length} />
           <Count label="Clients" value={clients.length} />

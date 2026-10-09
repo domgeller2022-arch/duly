@@ -830,13 +830,19 @@ function DocumentRow({
             </MenuItem>
           )}
           <MenuSeparator />
-          <MenuItem
-            danger
-            icon={<Trash2 className="size-3.5" aria-hidden />}
-            onClick={() => onDelete(doc)}
-          >
-            Delete
-          </MenuItem>
+          {doc.number ? (
+            <MenuItem
+              icon={<Trash2 className="size-3.5" aria-hidden />}
+              onClick={() => void 0}
+              disabled
+            >
+              Delete (void instead)
+            </MenuItem>
+          ) : (
+            <MenuItem danger icon={<Trash2 className="size-3.5" aria-hidden />} onClick={() => onDelete(doc)}>
+              Delete
+            </MenuItem>
+          )}
         </Menu>
       </Td>
     </tr>
