@@ -292,7 +292,10 @@ function GstSwitch({
   onPatch: (patch: Partial<BusinessProfile>) => void;
 }) {
   const from = profile.gstRegisteredFrom ?? today;
-  const next = withGstChange(profile, { registered: !profile.gstRegistered, from });
+  // The toggle is a change happening today; the user can then move its date
+  // with the field below. Toggling at the old effective date used to
+  // overwrite the recorded change instead of adding one.
+  const next = withGstChange(profile, { registered: !profile.gstRegistered, from: today });
 
   const affected = draftsAffectedByChange(drafts, {
     profileId: profile.id,
@@ -318,8 +321,8 @@ function GstSwitch({
           hint="On: documents are titled “Tax Invoice” and GST at 10% is applied. Off: they are titled “Invoice” with no GST line."
           onChange={(gstRegistered) =>
             onPatch({
-              gstRegistered,
-              gstRegisteredFrom: from,
+              gstRegistered: next.gstRegistered,
+              gstRegisteredFrom: next.gstRegisteredFrom,
               gstHistory: next.gstHistory,
               defaultTaxCodeId: defaultTaxCodeFor(gstRegistered),
             })

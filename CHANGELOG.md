@@ -88,6 +88,51 @@ a $50 payment recorded, and the stored row reading $110 total, $60 balance,
 Part paid. Unit tests cover the service directly: part payment, payment
 removal, and a deactivated GST code leaving an issued invoice untouched.
 
+### Remediation R3 — credit notes and client credit
+
+The credit half of the billing loop: money back that actually comes back,
+and credit that is spent exactly once.
+
+- **The first credit note now reduces its invoice.** The sum of linked credit
+  notes excluded the one being finalised, so a full $1,000 credit note left
+  the invoice at $1,000. The reduction runs through the recalculate-and-save
+  service, which counts every issued, non-void credit note linked to the
+  invoice — this one included.
+- **The engine knows about linked credit notes.** The balance is derived, so
+  the figure the linked notes reduce it by is an engine input
+  (`linkedCreditMinor`); without it, the next payment on a credited invoice
+  would have handed the credited amount straight back.
+- **Client credit is applied by the document, not by the engine.** The engine
+  used to subtract whatever credit the client held from every open invoice,
+  and nothing ever marked it spent — a $50 overpayment reduced every future
+  invoice by $50, forever, and the "Apply credit" button changed nothing.
+  The engine now applies exactly the `clientCreditApplied` the user chose,
+  capped at the document's total; availability is the editor's check, and a
+  finalised document's applied credit is a historical fact no recalculation
+  reinterprets.
+- **Applied credit is spent at finalise.** Finalising a document that applied
+  credit marks it off the client's ledger — oldest rows first, a remainder
+  coming off opening credit — so the same credit cannot apply to the next
+  invoice too.
+- **A credit note keeps the tax snapshot it inherited.** Finalising used to
+  overwrite it with today's GST status, breaking the plan's rule that a
+  credit note follows the invoice it credits.
+- **The GST switch is honest about dates.** Toggling registration used to
+  overwrite the change at its old effective date and flip the current switch
+  even for a future-dated change. A change is now recorded at the date it
+  happens, the switch shows the status today, and a future-dated change
+  waits for its date.
+- **Finalise writes the totals it was given** (`applyTotals` on the saved
+  document) — a draft's cached totals could otherwise survive into an issued
+  document. The cloud-sync filename is also only built when cloud sync is
+  actually configured.
+
+Tests: the first credit note reduces its invoice to paid; the inherited
+snapshot survives finalise; applied credit marks the ledger row spent and the
+stored balance carries it; the engine applies the document's figure and no
+more; a future-dated GST change does not flip the switch. `finalise.ts` was at
+0% coverage — it now has the end-to-end credit tests it never had.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

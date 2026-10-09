@@ -142,9 +142,14 @@ export function withGstChange(
     .concat({ registered: change.registered, from: change.from, note: change.note ?? '' })
     .sort((a, b) => compareIso(a.from, b.from));
 
+  // The switch shows the status today. A change dated for the future is
+  // recorded — drafts issued on or after that date follow it — but it must
+  // not flip the current registration until the date arrives.
+  const today = new Date().toISOString().slice(0, 10);
+
   return {
     ...profile,
-    gstRegistered: change.registered,
+    gstRegistered: gstStatusAt({ gstRegistered: profile.gstRegistered, gstHistory: history }, today),
     gstRegisteredFrom: change.from,
     gstHistory: history,
   };

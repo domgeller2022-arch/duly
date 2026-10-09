@@ -87,12 +87,26 @@ export async function recalculateDocument(args: RecalculateArgs): Promise<{
   ]);
   const documentPayments = payments.filter((p) => p.documentId === document.id);
 
+  // Credit notes already issued against this document reduce its balance,
+  // and the reduction must survive every later recalculation — the engine
+  // derives the balance, so it needs the figure.
+  const creditNotes = document.type === 'credit_note' ? [] : await db.listDocuments({ type: 'credit_note' });
+  const linkedCreditMinor = creditNotes
+    .filter(
+      (note) =>
+        note.status !== 'draft' &&
+        note.status !== 'void' &&
+        note.linkedDocumentIds.includes(document.id),
+    )
+    .reduce((sum, note) => sum + Math.abs(note.totals.total), 0);
+
   const result = calculate({
     document,
     lines,
     payments: documentPayments,
     taxCodes: taxCodesFor(document, liveCodes),
     roundingMethod: settings?.roundingMethod,
+    linkedCreditMinor,
   });
 
   let next: Document = applyTotals({ ...document }, result);

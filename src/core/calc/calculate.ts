@@ -100,8 +100,19 @@ export interface CalculateInput {
   payments?: Payment[];
   taxCodes: TaxCode[];
   roundingMethod?: RoundingMethod;
-  /** Client credit available to apply, in minor units. */
+  /**
+   * Client credit available to apply, in minor units. The engine no longer
+   * applies it by itself — the document says how much was applied — but the
+   * figure is kept for callers that show availability.
+   */
   clientCreditAvailable?: number;
+  /**
+   * Credit notes already issued against this document, in minor units.
+   * The engine needs the figure because the balance is derived: without it,
+   * the next recalculation (a payment, a re-file) would hand the credited
+   * amount straight back.
+   */
+  linkedCreditMinor?: number;
   /** Rate to AUD for the informational equivalent. */
   rateToAud?: string | null;
   /** Multiplies every result by -1 for a credit note. */
@@ -525,9 +536,16 @@ export function calculate(input: CalculateInput): CalculationResult {
   const net = inclusive ? sign * (taxableBase - taxTotal) : sign * taxableBase;
   const paid = sign * paidRaw;
 
-  const creditAvailable = input.clientCreditAvailable ?? 0;
-  const creditApplied = total > 0 ? Math.min(Math.max(0, creditAvailable), total) : 0;
-  const balance = total - paid - creditApplied;
+  // The document says how much credit the user applied to it. The engine
+  // applies exactly that — never the client's whole balance — and the
+  // availability it was checked against is the editor's job, not the
+  // engine's. A finalised document's applied credit is a historical fact:
+  // recalculating it later (a payment, a re-file) must not reinterpret it.
+  const creditApplied = total > 0
+    ? Math.max(0, Math.min(doc.clientCreditApplied ?? 0, total))
+    : 0;
+  const linkedCredit = Math.max(0, input.linkedCreditMinor ?? 0);
+  const balance = total - paid - creditApplied - linkedCredit;
 
   // GST payable drives the BAS summary and the "includes GST" allowance, so it
   // must be the rounded GST total of the GST-coded lines.

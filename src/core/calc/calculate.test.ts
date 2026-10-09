@@ -62,6 +62,7 @@ function calc(over: Partial<CalculateInput> = {}): CalculationResult {
     taxCodes: over.taxCodes ?? TAX,
     roundingMethod: over.roundingMethod,
     clientCreditAvailable: over.clientCreditAvailable,
+    linkedCreditMinor: over.linkedCreditMinor,
     rateToAud: over.rateToAud,
     sign: over.sign,
   };
@@ -828,16 +829,37 @@ describe('rule 8: paid and balance', () => {
     expect(r.balance).toBe(-4000);
   });
 
-  it('applies available client credit', () => {
-    const r = calc({ lines: [makeLine({ unitPrice: 10000 })], clientCreditAvailable: 3000 });
+  it("applies the credit the document says was applied — and nothing more", () => {
+    // Availability alone no longer reaches the balance: the user's "Apply
+    // credit" decision is a field on the document, and every future
+    // recalculation must respect it exactly.
+    const r = calc({
+      lines: [makeLine({ unitPrice: 10000 })],
+      document: makeDoc({ clientCreditApplied: 3000 }),
+      clientCreditAvailable: 999999,
+    });
     expect(r.creditApplied).toBe(3000);
     expect(r.balance).toBe(8000);
   });
 
   it('never applies more credit than the document is worth', () => {
-    const r = calc({ lines: [makeLine({ unitPrice: 10000 })], clientCreditAvailable: 999999 });
+    const r = calc({
+      lines: [makeLine({ unitPrice: 10000 })],
+      document: makeDoc({ clientCreditApplied: 999999 }),
+    });
     expect(r.creditApplied).toBe(11000);
     expect(r.balance).toBe(0);
+  });
+
+  it('available credit alone does not change the balance', () => {
+    const r = calc({ lines: [makeLine({ unitPrice: 10000 })], clientCreditAvailable: 5000 });
+    expect(r.creditApplied).toBe(0);
+    expect(r.balance).toBe(11000);
+  });
+
+  it('reduces the balance by issued credit notes linked to the document', () => {
+    const r = calc({ lines: [makeLine({ unitPrice: 10000 })], linkedCreditMinor: 4000 });
+    expect(r.balance).toBe(7000);
   });
 
   it('ignores credit on a credit note', () => {

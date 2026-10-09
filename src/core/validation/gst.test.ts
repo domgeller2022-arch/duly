@@ -174,22 +174,30 @@ describe('draftsAffectedByChange', () => {
 });
 
 describe('withGstChange', () => {
-  it('records the change and moves the current flag', () => {
+  it('records a change that is already in effect and moves the current flag', () => {
     const next = withGstChange(profile({ gstRegistered: false }), {
       registered: true,
-      from: '2026-07-01',
+      from: '2024-07-01',
       note: 'Registered from 1 July',
     });
     expect(next.gstRegistered).toBe(true);
-    expect(next.gstRegisteredFrom).toBe('2026-07-01');
     expect(next.gstHistory).toHaveLength(1);
-    expect(gstStatusAt(next, '2026-06-30')).toBe(false);
-    expect(gstStatusAt(next, '2026-07-01')).toBe(true);
+    expect(gstStatusAt(next, '2024-06-30')).toBe(false);
+    expect(gstStatusAt(next, '2024-07-01')).toBe(true);
+  });
+
+  it('records a future-dated change without flipping the switch today', () => {
+    const next = withGstChange(profile({ gstRegistered: false }), {
+      registered: true,
+      from: '2100-01-01',
+    });
+    expect(next.gstRegistered).toBe(false);
+    expect(gstStatusAt(next, '2100-01-01')).toBe(true);
   });
 
   it('replaces rather than duplicates an entry for the same date', () => {
-    const first = withGstChange(profile(), { registered: true, from: '2026-07-01' });
-    const corrected = withGstChange(first, { registered: false, from: '2026-07-01' });
+    const first = withGstChange(profile(), { registered: true, from: '2024-07-01' });
+    const corrected = withGstChange(first, { registered: false, from: '2024-07-01' });
     expect(corrected.gstHistory).toHaveLength(1);
     expect(corrected.gstRegistered).toBe(false);
   });

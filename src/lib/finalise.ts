@@ -25,9 +25,11 @@ import { financialYearKey, formatDateForFilename } from '@/core/validation/dates
 import { buildOutputPath, money } from '@/ui/lib/format';
 import { newEntity } from '@/core/schemas/common';
 import { syncDocumentToDrive } from '@/lib/cloudSync';
+import { recalculateDocument } from '@/lib/documentService';
 import { DEFAULT_PATTERNS } from '@/core/schemas/automation';
 import { renderDocumentPdf } from '@/renderer/pdf';
 import { buildDocumentModel } from '@/renderer/model';
+import { applyTotals } from '@/core/calc/calculate';
 import { paymentQrSrc } from '@/renderer/qr';
 import type { DesignTemplate } from '@/core/schemas';
 
@@ -90,23 +92,36 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
   // 2. Freeze the tax snapshot. `buildTaxSnapshot` applies the ATO's narrow
   //    allowance for "Total price includes GST" — only when the rate is exactly one
   //    eleventh — rather than assuming any inclusive document may use it.
-  const snapshot = buildTaxSnapshot({
-    document,
-    gstRegistered: profile.gstRegistered,
-    result,
-    taxCodes,
-    now,
-    financialYearStartMonth: settings.financialYearStartMonth,
-  });
+  // A credit note inherits its invoice's tax snapshot when it is created,
+  // and finalising it must not overwrite that with today's GST status: the
+  // plan's rule is that a credit note follows the invoice it credits.
+  const snapshot =
+    document.type === 'credit_note' && document.taxSnapshot
+      ? document.taxSnapshot
+      : buildTaxSnapshot({
+          document,
+          gstRegistered: profile.gstRegistered,
+          result,
+          taxCodes,
+          now,
+          financialYearStartMonth: settings.financialYearStartMonth,
+        });
 
-  const finalised: Document = {
-    ...document,
-    number: reserved.number,
-    numberAssignedAt: now,
-    status: 'finalised',
-    finalisedAt: now,
-    taxSnapshot: snapshot,
-  };
+  // The stored totals are derived, and the number is now a fact: apply the
+  // result the caller calculated before writing, so what lands in storage is
+  // what the compliance panel and the preview showed. A draft's cached
+  // totals could otherwise survive into an issued document.
+  const finalised: Document = applyTotals(
+    {
+      ...document,
+      number: reserved.number,
+      numberAssignedAt: now,
+      status: 'finalised',
+      finalisedAt: now,
+      taxSnapshot: snapshot,
+    },
+    result,
+  );
 
   // 3. Save, carrying the number.
   await db.saveDocument(finalised, lines);
@@ -148,11 +163,46 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
     await db.saveDocument({ ...finalised, lastPdfPath: pdfPath }, lines);
   }
 
+  // 3b. Credit the client actually spent on this document is now a fact:
+  //     mark it off the ledger, so the same credit cannot be applied to the
+  //     next invoice too. Ledger rows go first, oldest first; any remainder
+  //     comes off the client's opening credit.
+  if (finalised.clientCreditApplied > 0 && finalised.clientId) {
+    let remaining = finalised.clientCreditApplied;
+    const rows = (await db.listClientCredits(finalised.clientId))
+      .filter((row) => row.appliedToDocumentId === null && row.amount - row.appliedAmount > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, row.amount - row.appliedAmount);
+      const fullySpent = take === row.amount - row.appliedAmount;
+      await db.saveClientCredit({
+        ...row,
+        appliedAmount: row.appliedAmount + take,
+        appliedToDocumentId: fullySpent ? finalised.id : row.appliedToDocumentId,
+        updatedAt: now,
+      });
+      remaining -= take;
+    }
+
+    if (remaining > 0) {
+      const client = await db.getClient(finalised.clientId);
+      if (client) {
+        await db.saveClient({
+          ...client,
+          openingCredit: Math.max(0, client.openingCredit - remaining),
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
   // 4b. Cloud sync: the same document uploaded to the user's Google Drive, so
   //     the invoices do not live on one device alone. A failure here never
   //     blocks the submit; the automation log records what happened.
-  const cloudFileName = outputPathFor(settings, finalised, client, reserved.number, profile);
   if (input.writePdf !== false && settings.cloudSyncOnSubmit && settings.cloudClientId) {
+    const cloudFileName = outputPathFor(settings, finalised, client, reserved.number, profile);
     try {
       const model = buildDocumentModel({
         qrSrc: await paymentQrSrc(
@@ -308,27 +358,11 @@ export async function applyCreditToLinkedInvoices(input: FinaliseInput): Promise
     const bundle = await db.getDocumentBundle(invoiceId);
     if (!bundle || bundle.document.type === 'credit_note') continue;
 
-    // Void credit notes are not money back; they were never money back.
-    const siblings = await db.listDocuments({ type: 'credit_note' });
-    const credit = siblings
-      .filter(
-        (note) =>
-          note.linkedDocumentIds.includes(invoiceId) &&
-          note.status !== 'void' &&
-          note.status !== 'draft' &&
-          note.id !== document.id,
-      )
-      .reduce((sum, note) => sum + Math.abs(note.totals.total), 0);
-
-    if (credit === 0) continue;
-
-    const nextBalance = Math.max(0, bundle.document.totals.total - bundle.document.totals.paid - credit);
-
-    const updated: Document = {
-      ...bundle.document,
-      totals: { ...bundle.document.totals, balance: nextBalance },
-    };
-    await db.saveDocument(updated, bundle.lines);
+    // The service counts every issued, non-void credit note linked to the
+    // invoice — this one included, which is finalised by now. The old
+    // filter excluded it, so the first credit note on an invoice never
+    // reduced anything.
+    await recalculateDocument({ document: bundle.document, lines: bundle.lines });
     touched.push(invoiceId);
   }
 
