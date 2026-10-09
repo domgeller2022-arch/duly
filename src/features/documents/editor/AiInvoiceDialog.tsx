@@ -16,6 +16,7 @@ import { runAiTask } from '@/lib/ai';
 import { invoiceEntryTask, type InvoiceEntryResult } from '@/lib/aiTasks';
 import { createDocument } from '@/core/documents';
 import { recalculateDocument } from '@/lib/documentService';
+import { addDaysIso } from '@/core/validation/dates';
 import { newClient } from '@/core/schemas/crm';
 import { newEntity } from '@/core/schemas/common';
 import { Alert, Button, Dialog, Field, Select, TextInput, useToast } from '@/ui/components/base';
@@ -104,6 +105,12 @@ export function AiInvoiceDialog({ open, onClose }: { open: boolean; onClose: () 
 
       await recalculateDocument({
         document,
+        // The reviewed due days, when the parse or the user set them —
+        // the field used to be collected and then ignored.
+        documentPatch:
+          parsed.dueDays !== null && parsed.dueDays !== undefined
+            ? { dueDate: addDaysIso(document.issueDate, parsed.dueDays) }
+            : undefined,
         lines: parsedLines,
         taxCodes,
         deriveStatus: false,

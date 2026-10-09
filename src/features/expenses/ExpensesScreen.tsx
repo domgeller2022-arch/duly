@@ -21,6 +21,7 @@ import { receiptScanTask } from '@/lib/aiTasks';
 import { Sparkles } from 'lucide-react';
 import { attachmentSchema } from '@/core/schemas/crm';
 import { newEntity } from '@/core/schemas/common';
+import { parseAmountToMinor } from '@/core/money/money';
 import {
   Badge,
   Button,
@@ -136,8 +137,10 @@ export function ExpensesScreen() {
               supplier: result.value!.supplier || prev.supplier,
               description: result.value!.description || prev.description,
               date: /^\d{4}-\d{2}-\d{2}$/.test(result.value!.date) ? result.value!.date : prev.date,
-              amountMinor: Math.round(result.value!.amountDollars * 100) || prev.amountMinor,
-              gstMinor: Math.round(result.value!.gstDollars * 100) || prev.gstMinor,
+              amountMinor:
+                parseAmountToMinor(result.value!.amountDollars, settings?.defaultCurrency ?? 'AUD') || prev.amountMinor,
+              gstMinor:
+                parseAmountToMinor(result.value!.gstDollars, settings?.defaultCurrency ?? 'AUD') || prev.gstMinor,
               category: result.value!.category || prev.category,
               receiptFile: file,
             }

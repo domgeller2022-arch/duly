@@ -23,6 +23,7 @@ import { countBySeverity, summarise } from '@/core/validation/compliance';
 import { useAppStore, useActiveProfile } from '@/state/app';
 import { useEditorStore } from './editorStore';
 import { clientCodeFor, finaliseDocument, outputPathFor, patternFor } from '@/lib/finalise';
+import { money } from '@/ui/lib/format';
 import { renderBundlePdf } from '@/lib/exports';
 import { files, platform } from '@/adapters';
 import { nextCounterValue, previewNumber, shouldReset } from '@/core/engines/numbering';
@@ -172,7 +173,7 @@ export function SubmitDialog({
         await platform().mail.openInMailApp({
           to: client?.email ? [client.email] : [],
           subject: `${outcome.document.number || outcome.document.id} from ${profile.name}`,
-          body: `Hi ${client?.displayName ?? ''},\n\nPlease find ${outcome.document.number || 'the invoice'} for ${outcome.document.totals.total / 100} attached.\n\nThank you,\n${profile.name}`,
+          body: `Hi ${client?.displayName ?? ''},\n\nPlease find ${outcome.document.number || 'the invoice'} for ${money(outcome.document.totals.total, outcome.document.currency)} attached.\n\nThank you,\n${profile.name}`,
         });
       }
       if (emailNow) navigate(`${documentRouteFor(outcome.document)}?email=1`);

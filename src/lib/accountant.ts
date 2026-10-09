@@ -12,7 +12,39 @@
  */
 
 import { writeCsv } from '@/core/csv';
+import { toMajorNumber } from '@/core/money/money';
 import type { Client, Document, DocumentLine, Payment } from '@/core/schemas';
+import type { CalculationResult } from '@/core/calc/calculate';
+import type { TaxCode } from '@/core/tax/tax';
+
+/** A document ready for the accountant layouts, with its calculated result. */
+export interface AccountantDocument {
+  document: Document;
+  lines: DocumentLine[];
+  result: CalculationResult;
+}
+
+/** The tax type Xero expects, from the line's own tax code. */
+function xeroTaxType(taxCodeId: string | null, taxCodes: TaxCode[]): string {
+  const code = taxCodes.find((c) => c.id === taxCodeId);
+  return code && ['gst', 'custom', 'compound'].includes(code.type) ? 'GST on Income' : 'GST Free Income';
+}
+
+/** The per-unit tax-exclusive price, after every discount. */
+function exclusiveUnitPrice(
+  line: DocumentLine,
+  result: CalculationResult,
+  currency: string,
+): number {
+  const computed = result.lines.get(line.id);
+  const qty = Number.parseFloat(line.quantity) || 0;
+  // An expense line prices by its amount override; everything else per unit.
+  const net = computed?.net ?? 0;
+  if (line.type === 'expense' && line.amountOverride !== null) {
+    return toMajorNumber(net, currency);
+  }
+  return qty > 0 ? toMajorNumber(Math.round(net / qty), currency) : 0;
+}
 
 export type AccountingSystem = 'xero' | 'myob';
 
@@ -43,22 +75,26 @@ export function xeroContactsCsv(clients: Client[]): string {
  * UnitAmount is tax-exclusive dollars; Total is on the last row of each
  * invoice, as Xero's importer expects it.
  */
-export function xeroInvoicesCsv(invoices: { document: Document; lines: DocumentLine[] }[]): string {
+export function xeroInvoicesCsv(documents: AccountantDocument[], clients: Client[], taxCodes: TaxCode[]): string {
+  const nameFor = (clientId: string | null) =>
+    clients.find((c) => c.id === clientId)?.displayName ?? 'Unknown client';
   const rows: (string | number | null)[][] = [];
-  for (const { document, lines } of invoices) {
+
+  for (const { document, lines, result } of documents) {
+    const currency = document.currency;
     for (const line of lines) {
-      if (line.type === 'section' || line.type === 'note') continue;
+      if (line.type === 'section' || line.type === 'note' || line.type === 'discount') continue;
       rows.push([
-        document.clientId ?? '',
+        nameFor(document.clientId),
         document.number || document.draftNumber || '',
         document.issueDate,
         document.dueDate ?? '',
-        '', // InventoryItemCode — free-typed lines have none
+        '',
         line.description,
-        Number.parseFloat(line.quantity) || 0,
-        line.unitPrice / 100,
+        Number.parseFloat(line.quantity) || (line.type === 'expense' ? 1 : 0),
+        exclusiveUnitPrice(line, result, currency),
         '200',
-        document.totals.tax > 0 ? 'GST on Income' : 'GST Free Income',
+        xeroTaxType(line.taxCodeId, taxCodes),
       ]);
     }
   }
@@ -80,8 +116,8 @@ export function xeroInvoicesCsv(invoices: { document: Document; lines: DocumentL
 }
 
 /**
- * Xero payment import: one row per payment, referencing the invoice number it
- * settled. Amount is paid dollars.
+ * Xero payment import: one row per payment, referencing the invoice number
+ * it settled.
  */
 export function xeroPaymentsCsv(payments: Payment[], invoices: Document[]): string {
   const numberFor = (documentId: string) => invoices.find((d) => d.id === documentId)?.number ?? '';
@@ -89,9 +125,9 @@ export function xeroPaymentsCsv(payments: Payment[], invoices: Document[]): stri
     ['*InvoiceNumber', '*AccountCode', '*Date', '*Amount', 'Reference'],
     payments.map((payment) => [
       numberFor(payment.documentId),
-      '970', // Xero's "Bank Account" suspense code for imported payments
+      '970',
       payment.date,
-      payment.amount / 100,
+      toMajorNumber(payment.amount, 'AUD'),
       payment.reference,
     ]),
   );
@@ -120,19 +156,23 @@ export function myobContactsCsv(clients: Client[]): string {
  * MYOB AccountRight sales import: one row per line, invoice fields repeated.
  * Unit price is tax-exclusive dollars.
  */
-export function myobInvoicesCsv(invoices: { document: Document; lines: DocumentLine[] }[]): string {
+export function myobInvoicesCsv(documents: AccountantDocument[], clients: Client[], taxCodes: TaxCode[]): string {
+  const nameFor = (clientId: string | null) =>
+    clients.find((c) => c.id === clientId)?.displayName ?? 'Unknown client';
   const rows: (string | number | null)[][] = [];
-  for (const { document, lines } of invoices) {
+
+  for (const { document, lines, result } of documents) {
+    const currency = document.currency;
     for (const line of lines) {
-      if (line.type === 'section' || line.type === 'note') continue;
+      if (line.type === 'section' || line.type === 'note' || line.type === 'discount') continue;
       rows.push([
-        document.clientId ?? '',
+        nameFor(document.clientId),
         document.number || document.draftNumber || '',
         document.issueDate,
         line.description,
-        Number.parseFloat(line.quantity) || 0,
-        line.unitPrice / 100,
-        document.totals.tax > 0 ? 'GST' : 'GST Free',
+        Number.parseFloat(line.quantity) || (line.type === 'expense' ? 1 : 0),
+        exclusiveUnitPrice(line, result, currency),
+        xeroTaxType(line.taxCodeId, taxCodes) === 'GST on Income' ? 'GST' : 'GST Free',
       ]);
     }
   }
@@ -150,7 +190,7 @@ export function myobPaymentsCsv(payments: Payment[], invoices: Document[]): stri
     payments.map((payment) => [
       numberFor(payment.documentId),
       payment.date,
-      payment.amount / 100,
+      toMajorNumber(payment.amount, 'AUD'),
       payment.method.replace(/_/g, ' '),
       payment.reference,
     ]),
@@ -174,7 +214,7 @@ export function gstBasPeriodsCsv(invoices: Document[]): string {
     const quarter = Math.floor((month - 1) / 3) + 1;
     const key = `${year}-Q${quarter}`;
     const entry = quarters.get(key) ?? { gst: 0, invoiced: 0, count: 0 };
-    entry.gst += invoice.totals.tax;
+    entry.gst += invoice.totals.gstPayable;
     entry.invoiced += invoice.totals.total;
     entry.count += 1;
     quarters.set(key, entry);
@@ -183,6 +223,6 @@ export function gstBasPeriodsCsv(invoices: Document[]): string {
     ['BAS period', 'Invoices', 'GST collected', 'Total invoiced'],
     [...quarters.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([key, entry]) => [key, entry.count, entry.gst / 100, entry.invoiced / 100]),
+      .map(([key, entry]) => [key, entry.count, toMajorNumber(entry.gst, 'AUD'), toMajorNumber(entry.invoiced, 'AUD')]),
   );
 }

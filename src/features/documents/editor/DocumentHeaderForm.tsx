@@ -13,7 +13,7 @@ import { useAppStore } from '@/state/app';
 import { useEditorStore } from './editorStore';
 import { dueDateFor } from '@/core/validation/dates';
 import { CURRENCIES, getCurrency } from '@/core/money/currencies';
-import { Button, Card, CurrencySelect, Field, NumberInput, Select, TextInput } from '@/ui/components/base';
+import { Button, Card, CurrencyInput, CurrencySelect, Field, NumberInput, Select, TextInput } from '@/ui/components/base';
 import { ALL_TERMS } from './terms';
 import { depositAmount } from '@/core/documents';
 import { Badge } from '@/ui/components/base';
@@ -245,15 +245,15 @@ export function DocumentHeaderForm({
                     onChange={(value) => onPatch({ deposit: { ...doc.deposit, value } })}
                   />
                 ) : (
-                  <TextInput
-                    inputMode="decimal"
+                  // CurrencyInput keeps the typed draft while the user is in
+                  // the field, so "12." survives long enough to become "12.50"
+                  // — the raw input rounded every keystroke back to "12".
+                  <CurrencyInput
+                    value={Number(doc.deposit.value) || 0}
+                    currency={doc.currency}
                     disabled={locked}
-                    value={String((Number(doc.deposit.value) || 0) / 100)}
-                    onChange={(e) => {
-                      const dollars = Number(e.target.value.replace(/[^0-9.]/g, '')) || 0;
-                      onPatch({ deposit: { ...doc.deposit, value: String(Math.round(dollars * 100)) } });
-                    }}
-                    className="num text-right font-mono"
+                    ariaLabel="Deposit amount"
+                    onChange={(minor) => onPatch({ deposit: { ...doc.deposit, value: String(minor) } })}
                   />
                 )}
               </Field>

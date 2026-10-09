@@ -277,6 +277,29 @@ describe('rules 3 and 4: sections and subtotal', () => {
     expect(r.tax).toBe(4600);
   });
 
+  it('a document discount does not fold its share into the section subtotal', () => {
+    // The document discount sits above the section: below a section heading
+    // it would be treated as that section's discount.
+    const r = calc({
+      lines: [
+        makeLine({
+          type: 'discount',
+          description: 'Document discount',
+          discountType: 'percent',
+          discountValue: '10',
+          position: 0,
+        }),
+        makeLine({ type: 'section', description: 'Phase 1', position: 1, id: 'sec-1' }),
+        makeLine({ unitPrice: 40000, sectionId: 'sec-1', position: 2 }),
+      ],
+    });
+    // The section is worth $400 after its (zero) section discount; the
+    // document's 10% comes off the subtotal row, not the section's.
+    expect(r.sections[0].subtotal).toBe(40000);
+    expect(r.subtotal).toBe(40000);
+    expect(r.discount).toBe(-4000);
+  });
+
   it('applies the section discount after line discounts', () => {
     const r = calc({
       lines: [

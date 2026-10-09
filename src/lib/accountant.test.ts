@@ -7,7 +7,10 @@ import {
   myobInvoicesCsv,
   myobPaymentsCsv,
   gstBasPeriodsCsv,
+  type AccountantDocument,
 } from './accountant';
+import { calculate } from '@/core/calc/calculate';
+import { DEFAULT_TAX_CODES } from '@/core/tax/tax';
 import { newClient } from '@/core/schemas/crm';
 import { documentSchema, documentLineSchema } from '@/core/schemas/document';
 
@@ -17,6 +20,12 @@ const STAMP = {
   updatedAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
 };
+
+/** The client the fixture document belongs to, by the id the invoice carries. */
+function clientFor(doc: ReturnType<typeof invoice>) {
+  const client = newClient({ displayName: 'Acme Pty Ltd' });
+  return { ...client, id: doc.clientId ?? client.id };
+}
 
 function invoice() {
   return documentSchema.parse({
@@ -66,8 +75,11 @@ describe('xero exports', () => {
       description: 'Consulting',
       quantity: '2',
       unitPrice: 50000,
+      taxCodeId: 'tax_gst',
     });
-    const csv = xeroInvoicesCsv([{ document: doc, lines: [line] }]);
+    const result = calculate({ document: doc, lines: [line], payments: [], taxCodes: [...DEFAULT_TAX_CODES] });
+    const bundle: AccountantDocument[] = [{ document: doc, lines: [line], result }];
+    const csv = xeroInvoicesCsv(bundle, [clientFor(doc)], [...DEFAULT_TAX_CODES]);
     expect(csv).toContain(
       '*ContactName,*InvoiceNumber,*InvoiceDate,DueDate,InventoryItemCode,Description,*Quantity,*UnitAmount,AccountCode,*TaxType',
     );
@@ -115,7 +127,9 @@ describe('myob exports', () => {
       quantity: '1',
       unitPrice: 100000,
     });
-    expect(myobInvoicesCsv([{ document: doc, lines: [line] }])).toContain(
+    const result = calculate({ document: doc, lines: [line], payments: [], taxCodes: [...DEFAULT_TAX_CODES] });
+    const bundle: AccountantDocument[] = [{ document: doc, lines: [line], result }];
+    expect(myobInvoicesCsv(bundle, [clientFor(doc)], [...DEFAULT_TAX_CODES])).toContain(
       '*Co./Last Name,*Invoice No.,*Date,Description,*Quantity,*Unit Price,Tax Code',
     );
     expect(myobPaymentsCsv([], [doc])).toContain('*Invoice No.,*Date,*Amount Received,Method,Reference');

@@ -12,6 +12,7 @@
  */
 
 import { parseCsv, sniffDelimiter } from '@/core/csv';
+import { parseAmountToMinor } from '@/core/money/money';
 import type { Document, Payment } from '@/core/schemas';
 
 export interface BankTransaction {
@@ -63,10 +64,9 @@ function toIsoDate(raw: string, preferDayFirst = false): string {
 }
 
 function toMinor(raw: string): number {
-  const cleaned = raw.replace(/[$,\s]/g, '');
-  const value = Number.parseFloat(cleaned);
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 100);
+  // The canonical parser: a bank statement's "1870.00" must become 187000
+  // minor units exactly, whatever the float rounding feels like doing.
+  return parseAmountToMinor(raw.replace(/[$\s]/g, ''), 'AUD');
 }
 
 /** Parse an OFX statement: STMTTRN blocks with DTPOSTED, TRNAMT, NAME, MEMO, FITID. */

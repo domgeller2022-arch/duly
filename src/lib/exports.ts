@@ -12,6 +12,7 @@
  */
 
 import { writeCsv } from '@/core/csv';
+import { toMajorNumber } from '@/core/money/money';
 import type { CalculationResult } from '@/core/calc/calculate';
 import type {
   Attachment,
@@ -167,7 +168,14 @@ export function zipBlob(files: { name: string; data: Uint8Array | string }[]): B
 /* ------------------------------------------------------------------ */
 
 function xmlEscape(value: string): string {
-  return value.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"');
+  // Real entities, in the right order (& first): the previous version
+  // replaced each character with itself, so "Acme & Sons" produced files
+  // neither Excel nor Word could open.
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 export function tableCsv(exportData: TableExport): string {
@@ -317,20 +325,24 @@ export function documentTableExport(args: {
   money: (cents: number, currency: string) => string;
 }): TableExport {
   const { document, lines, result, clientName, money } = args;
+  // Every valued line type — time lines were dropped entirely and expense
+  // lines showed $0 — priced by whichever field that type actually uses.
   const currency = document.currency;
   return {
     title: document.number || document.draftNumber || document.id,
     headers: ['Description', 'Qty', 'Unit price', 'Tax', 'Amount'],
     rows: lines
-      .filter((line) => line.type === 'item' || line.type === 'expense')
+      .filter((line) => line.type === 'item' || line.type === 'time' || line.type === 'expense')
       .map((line) => {
         const computed = result.lines.get(line.id);
+        const perUnit =
+          line.type === 'expense' && line.amountOverride !== null ? line.amountOverride : line.unitPrice;
         return [
           line.description,
           line.quantity,
-          line.unitPrice / 100,
-          (computed?.tax ?? 0) / 100,
-          (computed?.gross ?? 0) / 100,
+          toMajorNumber(perUnit, currency),
+          toMajorNumber(computed?.tax ?? 0, currency),
+          toMajorNumber(computed?.gross ?? 0, currency),
         ];
       }),
     meta: [

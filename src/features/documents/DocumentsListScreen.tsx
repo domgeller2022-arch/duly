@@ -62,6 +62,7 @@ import {
 } from './BulkResultDialog';
 import { files, storage } from '@/adapters';
 import { recalculateDocument } from '@/lib/documentService';
+import { toMajorNumber } from '@/core/money/money';
 import { tableCsv, zipBlob, renderBundlePdf } from '@/lib/exports';
 import { AiInvoiceDialog } from './editor/AiInvoiceDialog';
 import { cn } from '@/ui/lib/cn';
@@ -344,8 +345,8 @@ export function DocumentsListScreen({ kind = 'invoice' }: { kind?: DocumentKind 
               d.type,
               clients.find((c) => c.id === d.clientId)?.displayName ?? '',
               d.issueDate,
-              d.totals.total / 100,
-              d.totals.balance / 100,
+              toMajorNumber(d.totals.total, d.currency),
+              toMajorNumber(d.totals.balance, d.currency),
             ]),
             meta: [],
           }),

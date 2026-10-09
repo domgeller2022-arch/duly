@@ -486,7 +486,18 @@ export function calculate(input: CalculateInput): CalculationResult {
           sign *
           (members.reduce((acc, m) => acc + m.amountBeforeLineDiscount, 0) -
             members.reduce((acc, m) => acc + m.lineDiscount, 0)),
-        subtotal: sign * members.reduce((acc, m) => acc + m.amountAfterLineDiscount, 0),
+        // Pass 3 mutates amountAfterLineDiscount with each line's share of
+        // the document discount, so the raw sum would fold that share into
+        // the section subtotal — double-counting it against the printed
+        // Discount row. The share is added back out: the section subtotal
+        // is what the section is worth after its own discount, and the
+        // document discount is the document's, exactly once.
+        subtotal:
+          sign *
+          members.reduce(
+            (acc, m) => acc + m.amountAfterLineDiscount - (documentDiscountShare.get(m.line.id) ?? 0),
+            0,
+          ),
         discount: sign * (sectionDiscountTotals.get(s.id) ?? 0),
         lineIds,
         collapsed: s.collapsed,

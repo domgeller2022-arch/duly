@@ -706,9 +706,11 @@ function LineTable({
               return (
                 <View key={`section-${entry.sectionId}`} style={styles.sectionRow} wrap={false}>
                   <Text style={styles.sectionTitle}>{section.title}</Text>
-                  <Text style={styles.cellNum}>
-                    {formatMoneyFor(model, section.subtotalMinor + section.discountMinor)}
-                  </Text>
+                  {/* The subtotal the editor shows: after the section
+                      discount. Adding the (negative) discount back printed a
+                      figure BELOW the discounted amount — $320 where the
+                      editor and the client's copy said $360. */}
+                  <Text style={styles.cellNum}>{formatMoneyFor(model, section.subtotalMinor)}</Text>
                 </View>
               );
             }

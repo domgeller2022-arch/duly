@@ -16,6 +16,7 @@ import { useAppStore } from '@/state/app';
 import { storage } from '@/adapters';
 import { matchTransactions, parseStatement, type MatchResult } from '@/lib/bankImport';
 import { recalculateDocument } from '@/lib/documentService';
+import { toMajorNumber } from '@/core/money/money';
 import { paymentSchema } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
 import {
@@ -269,7 +270,7 @@ export function BankImportScreen() {
                           disabled={result.status === 'duplicate' || openInvoices.length === 0}
                           onClick={() => {
                             setConfirming(result);
-                            setConfirmAmount((result.transaction.amountMinor / 100).toFixed(2));
+                            setConfirmAmount(String(toMajorNumber(result.transaction.amountMinor, settings?.defaultCurrency ?? 'AUD')));
                             setConfirmDate(result.transaction.date);
                           }}
                         >

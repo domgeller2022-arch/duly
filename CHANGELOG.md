@@ -209,6 +209,44 @@ Verified: `cargo check` clean for both the desktop and the Android target,
 and `tauri build` produces `Duly.app` and a `.dmg` with everything above in
 (9.84 MiB).
 
+### Remediation R6 — exports that leave the app are correct
+
+- **XLSX and DOCX survive an ampersand.** The XML escaper replaced each
+  character with itself — `"Acme & Sons"` produced files neither Excel nor
+  Word could open. Real entity escaping now, with a regression test that
+  round-trips `& < > "` through both formats.
+- **Time and expense lines export.** Per-document CSV, XLSX and DOCX dropped
+  time lines entirely and showed expense lines at $0; every valued line
+  type exports now, priced by the field that type actually uses.
+- **Minor units convert by the currency's decimals**, everywhere: the
+  document exports, the bulk ZIP manifest, the submit email body, the bank
+  import (statement parser and confirm field), the AI receipt scan, the
+  accountant files and the fixed-deposit field all used a hardcoded `/ 100`,
+  which is 100× wrong for JPY and 10× for KWD. One canonical parser/convertor
+  (`parseAmountToMinor`, `toMajorNumber`) backs them all.
+- **A fixed deposit can take cents.** The raw input rounded every keystroke,
+  so "12.50" became "125"; the field is a CurrencyInput now, which keeps the
+  typed draft while the user is in it.
+- **The PDF's section subtotal matches the editor's.** The PDF added the
+  (negative) section discount back to a figure that already included it,
+  printing $320 where the editor and the client's copy said $360; it prints
+  the same `section.subtotal` the editor prints.
+- **A document discount no longer leaks into section subtotals.** The engine
+  computed section summaries after apportioning the document discount into
+  line amounts, so the section rows and the printed Discount row
+  double-counted it; the share is added back out, per the contract.
+- **The accountant files would import.** The Xero and MYOB layouts carried
+  the client's internal UUID in the contact column, one tax type per
+  invoice instead of per line, pre-discount (and GST-inclusive) unit prices,
+  and every business mixed together. They now carry client display names,
+  per-line tax types, per-unit tax-exclusive prices after every discount
+  (calculated through the same service everything else uses, so issued
+  documents use their frozen codes), and are scoped to the active business.
+  The BAS summary sums `gstPayable` — the GST-coded lines — not every tax
+  code on the document.
+- **The AI invoice dialog honours the reviewed due days** instead of
+  collecting them and quietly dropping them.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

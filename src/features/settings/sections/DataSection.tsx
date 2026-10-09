@@ -19,6 +19,7 @@ import { files, storage } from '@/adapters';
 import { SchemaTooNewError } from '@/adapters/web/version';
 import { useAppStore } from '@/state/app';
 import { Alert, Button, ConfirmDialog, Panel, Switch, Table, Td, Th, useToast } from '@/ui/components/base';
+import { recalculateDocument } from '@/lib/documentService';
 import { countLabel } from '@/ui/lib/format';
 import {
   myobContactsCsv,
@@ -332,24 +333,48 @@ function AccountantExportPanel() {
 
   const exportFor = async (system: 'xero' | 'myob') => {
     try {
+      // Scoped to the active business, and calculated through the same
+      // service everything else uses — the accountant gets the frozen tax
+      // codes an issued document carries, and per-line figures.
+      const activeProfile = useAppStore.getState().profiles[0];
+      const taxCodes = await storage().listTaxCodes();
       const invoiceBundles = await Promise.all(
         documents
-          .filter((d) => d.type === 'invoice' && d.status !== 'draft' && d.status !== 'void')
-          .map(async (d) => ({ document: d, lines: await storage().listDocumentLines(d.id) })),
+          .filter(
+            (d) =>
+              d.type === 'invoice' &&
+              d.status !== 'draft' &&
+              d.status !== 'void' &&
+              (!activeProfile || d.profileId === activeProfile.id),
+          )
+          .map(async (d) => {
+            const lines = await storage().listDocumentLines(d.id);
+            const { result } = await recalculateDocument({
+              document: d,
+              lines,
+              save: false,
+              deriveStatus: false,
+            });
+            return { document: d, lines, result };
+          }),
       );
+      const scopedPayments = payments.filter(
+        (p) => !activeProfile || documents.find((d) => d.id === p.documentId)?.profileId === activeProfile.id,
+      );
+      const scopedDocuments = documents.filter((d) => !activeProfile || d.profileId === activeProfile.id);
       const csvs =
         system === 'xero'
           ? [
               { name: 'contacts.csv', data: xeroContactsCsv(clients) },
-              { name: 'invoices.csv', data: xeroInvoicesCsv(invoiceBundles) },
-              { name: 'payments.csv', data: xeroPaymentsCsv(payments, documents) },
-              { name: 'gst-bas-periods.csv', data: gstBasPeriodsCsv(documents) },
+              { name: 'invoices.csv', data: xeroInvoicesCsv(invoiceBundles, clients, taxCodes) },
+              { name: 'payments.csv', data: xeroPaymentsCsv(scopedPayments, documents) },
+              { name: 'gst-bas-periods.csv', data: gstBasPeriodsCsv(scopedDocuments) },
             ]
           : [
               { name: 'contacts.csv', data: myobContactsCsv(clients) },
-              { name: 'sales.csv', data: myobInvoicesCsv(invoiceBundles) },
-              { name: 'payments.csv', data: myobPaymentsCsv(payments, documents) },
-              { name: 'gst-bas-periods.csv', data: gstBasPeriodsCsv(documents) },
+              { name: 'sales.csv', data: myobInvoicesCsv(invoiceBundles, clients, taxCodes) },
+              { name: 'payments.csv', data: myobPaymentsCsv(scopedPayments, documents) },
+              { name: 'gst-bas-periods.csv', data: gstBasPeriodsCsv(scopedDocuments) },
             ];
       await files().saveAs(`duly-${system}-export.zip`, zipBlob(csvs));
       push({
