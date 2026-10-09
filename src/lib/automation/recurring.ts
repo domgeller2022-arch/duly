@@ -19,6 +19,7 @@ import {
   runKey,
 } from '@/core/engines/recurrence';
 import { dueDateFor } from '@/core/validation/dates';
+import { copyLinesOnto } from '@/core/documents';
 
 export interface RunOutcome {
   document: Document;
@@ -106,20 +107,13 @@ async function createRun(scheduleId: string, runDate: string): Promise<RunOutcom
 
   const documentId = newEntity({}).id;
   const sourceLines = source ? await db.listDocumentLines(source.id) : [];
+  const runStamp = { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 
-  // Line-text variables resolve here, so "Retainer — {month} {year}" updates
-  // itself on each run without anyone editing it.
+  // Copied through the same helper every copy uses, so a run of a sectioned
+  // source keeps its section discounts — and line-text variables resolve
+  // here, so "Retainer — {month} {year}" updates itself on each run.
   const lines = resolveLineVariables(
-    sourceLines.map((line, index) => ({
-      ...line,
-      id: newEntity({}).id,
-      documentId,
-      position: index,
-      // A copy is a new record: nothing in the previous run may be edited later.
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deletedAt: null,
-    })),
+    source ? copyLinesOnto(documentId, sourceLines, runStamp) : [],
     runDate,
     currency,
   );
@@ -144,6 +138,10 @@ async function createRun(scheduleId: string, runDate: string): Promise<RunOutcom
       termsId,
       currency,
       taxCodeId,
+      // A run of an inclusive source is an inclusive draft — the copied
+      // prices already contain the tax.
+      taxMode: source?.taxMode ?? 'exclusive',
+      labelLanguage: source?.labelLanguage ?? 'en',
       designTemplateId: templateId,
       emailTemplateId,
       notes: schedule.notes || source?.notes || '',

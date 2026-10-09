@@ -70,14 +70,22 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
       issueDate,
       dueDate: dueDateFor(issueDate, termsId),
       termsId,
-      currency: preset?.currency ?? client?.defaultCurrency ?? profile.defaultCurrency,
-      taxMode: preset?.taxMode ?? 'exclusive',
-      taxCodeId: client?.defaultTaxCodeId ?? profile.defaultTaxCodeId ?? DEFAULT_TAX_CODES[0].id,
+      // A copy carries what its source said: the client, the pricing mode,
+      // the currency and the templates. Falling back to the business's
+      // defaults here is how an inclusive invoice duplicated as exclusive —
+      // GST added on top of prices that already contained it.
+      currency: preset?.currency ?? source?.currency ?? client?.defaultCurrency ?? profile.defaultCurrency,
+      taxMode: preset?.taxMode ?? source?.taxMode ?? 'exclusive',
+      taxCodeId:
+        source?.taxCodeId ?? client?.defaultTaxCodeId ?? profile.defaultTaxCodeId ?? DEFAULT_TAX_CODES[0].id,
+      designTemplateId:
+        preset?.designTemplateId ??
+        source?.designTemplateId ??
+        client?.defaultDesignTemplateId ??
+        profile.defaultDesignTemplateId,
+      emailTemplateId: preset?.emailTemplateId ?? source?.emailTemplateId ?? client?.defaultEmailTemplateId,
       notes: preset?.notes ?? source?.notes ?? '',
       termsText: preset?.termsText ?? source?.termsText ?? profile.paymentTermsText ?? '',
-      designTemplateId:
-        preset?.designTemplateId ?? client?.defaultDesignTemplateId ?? profile.defaultDesignTemplateId,
-      emailTemplateId: preset?.emailTemplateId ?? client?.defaultEmailTemplateId,
       labelLanguage: client?.labelLanguage ?? 'en',
       poNumber: client?.requirePoNumber ? '' : (source?.poNumber ?? ''),
       reference: source?.reference ?? '',
@@ -92,21 +100,7 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
   );
 
   const sourceLines = args.sourceLines ?? [];
-  const lines = sourceLines.length
-    ? sourceLines.map((line, index) =>
-        documentLineSchema.parse(
-          newEntity({
-            ...line,
-            id: newEntity({}).id,
-            documentId: id,
-            position: index,
-            createdAt: stamp.createdAt,
-            updatedAt: stamp.updatedAt,
-            deletedAt: null,
-          }),
-        ),
-      )
-    : [];
+  const lines = sourceLines.length ? copyLinesOnto(id, sourceLines, stamp) : [];
 
   // The client carries a standing discount: put it on the document as a
   // discount line so the editor, the PDF and the calculation all see the same
@@ -134,6 +128,38 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
   }
 
   return { document, lines };
+}
+
+/**
+ * Copy lines onto a new document with fresh ids — and remap every internal
+ * reference with them. A section discount's target and a line's section
+ * membership point at line ids; without the remap, a copy's section
+ * discounts silently vanished and its lines fell out of their sections.
+ */
+export function copyLinesOnto(
+  documentId: string,
+  lines: DocumentLine[],
+  stamp: { createdAt: string; updatedAt: string },
+): DocumentLine[] {
+  const idFor = new Map<string, string>();
+  for (const line of lines) idFor.set(line.id, newEntity({}).id);
+
+  return lines.map((line, index) => {
+    const copy = documentLineSchema.parse(
+      newEntity({
+        ...line,
+        id: idFor.get(line.id)!,
+        documentId,
+        position: index,
+        createdAt: stamp.createdAt,
+        updatedAt: stamp.updatedAt,
+        deletedAt: null,
+      }),
+    );
+    if (line.sectionId) copy.sectionId = idFor.get(line.sectionId) ?? null;
+    if (line.appliesToSectionId) copy.appliesToSectionId = idFor.get(line.appliesToSectionId) ?? null;
+    return copy;
+  });
 }
 
 /** "DRAFT 1", "DRAFT 2"… so an unsaved draft is identifiable in the list. */
@@ -474,6 +500,7 @@ export function convertQuoteToInvoice(
   profile: BusinessProfile,
   settings: Settings,
   today: string,
+  client?: Client | null,
   /** Kept so the invoice can point back at the quote it became. */
   invoiceId?: string,
 ): {
@@ -489,6 +516,7 @@ export function convertQuoteToInvoice(
     today,
     source: quote,
     sourceLines: quoteLines,
+    client,
   });
 
   const invoice: Document = {
@@ -550,8 +578,9 @@ export function duplicateDocument(
   profile: BusinessProfile,
   settings: Settings,
   today: string,
+  client?: Client | null,
 ): { document: Document; lines: DocumentLine[] } {
-  const copy = createDocument({ type: doc.type, profile, settings, source: doc, sourceLines: lines, today });
+  const copy = createDocument({ type: doc.type, profile, settings, source: doc, sourceLines: lines, today, client });
   return {
     document: {
       ...copy.document,
@@ -624,22 +653,10 @@ export function createCreditNote(
     }),
   );
 
-  const copied = lines.map((line, index) =>
-    documentLineSchema.parse(
-      newEntity({
-        ...line,
-        id: newEntity({}).id,
-        documentId: id,
-        position: index,
-        createdAt: stamp.createdAt,
-        updatedAt: stamp.updatedAt,
-        deletedAt: null,
-        // Only taxable lines carry the invoice's codes forward untouched; a
-        // credit note legitimately zeroes out a specific line.
-        taxCodeId: line.taxCodeId,
-      }),
-    ),
-  );
+  // Copied through the same helper as every other copy, so a credited
+  // section's discount points at the credit note's own section — without
+  // the remap, a credit note could refund more than the section charged.
+  const copied = copyLinesOnto(id, lines, stamp);
 
   void profile;
   void settings;

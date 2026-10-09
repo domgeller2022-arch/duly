@@ -173,7 +173,14 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
         if (fromQuoteId) {
           const bundle = await db.getDocumentBundle(fromQuoteId);
           if (cancelled || !bundle) return;
-          const built = convertQuoteToInvoice(bundle.document, bundle.lines, profile, settings, today);
+          const built = convertQuoteToInvoice(
+            bundle.document,
+            bundle.lines,
+            profile,
+            settings,
+            today,
+            clients.find((c) => c.id === bundle.document.clientId) ?? null,
+          );
           await db.saveDocument(built.document, built.lines);
           // The quote is accepted and points at the invoice, so the two are linked
           // from both ends and the quote cannot be converted a second time by accident.
@@ -252,7 +259,14 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
     void (async () => {
       try {
         if (duplicate === '1') {
-          const copy = duplicateDocument(doc, lines, profile, settings, today);
+          const copy = duplicateDocument(
+            doc,
+            lines,
+            profile,
+            settings,
+            today,
+            clients.find((c) => c.id === doc.clientId) ?? null,
+          );
           await storage().saveDocument(copy.document, copy.lines);
           await refreshDocuments();
           endedOn = copy.document;
@@ -408,12 +422,19 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
 
   const handleDuplicate = useCallback(async () => {
     if (!doc || !profile || !settings) return;
-    const copy = duplicateDocument(doc, lines, profile, settings, today);
+    const copy = duplicateDocument(
+            doc,
+            lines,
+            profile,
+            settings,
+            today,
+            clients.find((c) => c.id === doc.clientId) ?? null,
+          );
     await storage().saveDocument(copy.document, copy.lines);
     await refreshDocuments();
     push({ tone: 'success', title: 'Duplicated', description: 'A fresh draft with a new number.' });
     navigate(documentRoute(copy.document));
-  }, [doc, lines, profile, settings, today, refreshDocuments, push, navigate]);
+  }, [doc, lines, profile, settings, today, clients, refreshDocuments, push, navigate]);
 
   /**
    * Apply a preset to the open draft.

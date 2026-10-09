@@ -133,6 +133,32 @@ stored balance carries it; the engine applies the document's figure and no
 more; a future-dated GST change does not flip the switch. `finalise.ts` was at
 0% coverage — it now has the end-to-end credit tests it never had.
 
+### Remediation R4 — one copy, made correctly
+
+The third structural root: copying a document was reimplemented at every
+call site, and each dropped a different field. One line-copy helper — fresh
+ids **and remapped internal references** — now backs them all.
+
+- **Copies keep their section discounts.** Every copy gave lines new ids but
+  left a section discount's target (and each line's section membership)
+  pointing at the *old* document's lines, so the discount silently vanished —
+  duplicates, quote conversions, progress invoices, recurring runs and credit
+  notes were all affected, and a credit note of a discounted invoice could
+  refund more than was charged. `copyLinesOnto` remaps both references with
+  the ids, and every copy path uses it.
+- **Copies keep what the source said.** A duplicate or conversion now carries
+  the source's client, pricing mode, currency, tax code and design templates —
+  an inclusive invoice used to duplicate as exclusive, adding GST on top of
+  prices that already contained it, and a USD document was re-labelled AUD
+  with the old prices kept.
+- **Recurring runs are real copies too**: a run of an inclusive, sectioned
+  source is an inclusive draft with its sections intact, not a hand-built
+  document that happened to look like one.
+
+Tests: a duplicate of an inclusive, section-discounted, USD invoice for a
+client keeps all five facts and its section structure; a converted quote
+keeps the quote's client.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

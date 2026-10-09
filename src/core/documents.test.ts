@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Document } from '@/core/schemas';
-import { deriveDocumentStatus, isOpenDocument, moveLine } from '@/core/documents';
+import {
+  convertQuoteToInvoice,
+  deriveDocumentStatus,
+  duplicateDocument,
+  isOpenDocument,
+  moveLine,
+} from '@/core/documents';
+import { newBusinessProfile, newClient } from '@/core/schemas/crm';
+import { documentLineSchema, documentSchema, settingsSchema, type DocumentLine } from '@/core/schemas';
 
 const STAMPS = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -123,5 +131,89 @@ describe('moveLine', () => {
   it('is a no-op for an out-of-range source', () => {
     const lines = [line('a', 0), line('b', 1)];
     expect(moveLine(lines, -1, 1).map((l) => l.id)).toEqual(['a', 'b']);
+  });
+});
+
+/* ================================================================== */
+describe('copies carry what the source said (duplicate, convert, credit)', () => {
+  const profile = newBusinessProfile({ name: 'Acme' });
+  const client = newClient({ displayName: 'Client Co', defaultCurrency: 'AUD' });
+  const settings = settingsSchema.parse({ ...STAMPS, id: 'settings' });
+
+  function sectionedSource() {
+    const invoice = documentSchema.parse({
+      ...STAMPS,
+      id: 'src_1',
+      type: 'invoice',
+      profileId: profile.id,
+      clientId: client.id,
+      status: 'finalised',
+      number: 'INV-2026-0001',
+      currency: 'USD',
+      taxMode: 'inclusive',
+      taxCodeId: 'tax_gst',
+      issueDate: '2026-10-01',
+      dueDate: '2026-10-31',
+    });
+    const section = documentLineSchema.parse({
+      ...STAMPS,
+      id: 'sec_1',
+      documentId: invoice.id,
+      type: 'section',
+      description: 'Phase 1',
+      position: 0,
+    });
+    const item = documentLineSchema.parse({
+      ...STAMPS,
+      id: 'item_1',
+      documentId: invoice.id,
+      type: 'item',
+      description: 'Build',
+      quantity: '1',
+      unitPrice: 100000,
+      taxCodeId: 'tax_gst',
+      sectionId: 'sec_1',
+      position: 1,
+    });
+    const sectionDiscount = documentLineSchema.parse({
+      ...STAMPS,
+      id: 'disc_1',
+      documentId: invoice.id,
+      type: 'discount',
+      description: 'Loyalty',
+      discountType: 'percent',
+      discountValue: '10',
+      discountDirection: 'discount',
+      appliesToSectionId: 'sec_1',
+      position: 2,
+    });
+    return { invoice, lines: [section, item, sectionDiscount] as DocumentLine[] };
+  }
+
+  it('a duplicate keeps the client, the tax mode, the currency and the section discount', () => {
+    const { invoice, lines } = sectionedSource();
+    const copy = duplicateDocument(invoice, lines, profile, settings, '2026-10-09', client);
+
+    expect(copy.document.clientId).toBe(client.id);
+    expect(copy.document.taxMode).toBe('inclusive');
+    expect(copy.document.currency).toBe('USD');
+    expect(copy.document.taxCodeId).toBe('tax_gst');
+
+    // The copy's section discount points at the copy's section, not the
+    // source's — which is how it silently used to disappear.
+    const copySection = copy.lines.find((l) => l.type === 'section')!;
+    const copyItem = copy.lines.find((l) => l.id !== copySection.id && l.sectionId)!;
+    const copyDiscount = copy.lines.find((l) => l.type === 'discount')!;
+    expect(copyItem.sectionId).toBe(copySection.id);
+    expect(copyDiscount.appliesToSectionId).toBe(copySection.id);
+    expect(copy.lines.every((l) => l.documentId === copy.document.id)).toBe(true);
+  });
+
+  it('a converted quote keeps the quote’s client', () => {
+    const { invoice, lines } = sectionedSource();
+    const quote = { ...invoice, id: 'q_1', type: 'quote' as const };
+    const built = convertQuoteToInvoice(quote, lines, profile, settings, '2026-10-09', client);
+    expect(built.document.clientId).toBe(client.id);
+    expect(built.document.taxMode).toBe('inclusive');
   });
 });
