@@ -12,8 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import type { Document, Payment } from '@/core/schemas';
-import { calculate } from '@/core/calc/calculate';
+import type { Payment } from '@/core/schemas';
 import { paymentSchema } from '@/core/schemas/document';
 import { clientCreditSchema } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
@@ -34,8 +33,8 @@ import {
 } from '@/ui/components/base';
 import { money } from '@/ui/lib/format';
 import { dueDateFor } from '@/core/validation/dates';
-import { deriveDocumentStatus } from '@/core/documents';
 import { refileDocument } from '@/lib/finalise';
+import { recalculateDocument } from '@/lib/documentService';
 
 export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { push } = useToast();
@@ -100,39 +99,35 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
         }),
       );
 
-      // When correcting, the replacement is written before the original is removed,
-      // so a failure half way leaves both payments rather than none.
-      if (replacing) await commitEdit(payment);
-      else await db.savePayment(payment);
+      // When correcting, the replacement is written before the original is
+      // removed, so a failure half way leaves both payments rather than none.
+      if (replacing) {
+        await db.savePayment(payment);
+        await db.deletePayment(replacing);
+      } else {
+        await db.savePayment(payment);
+      }
 
       // A payment recorded against a deposit moves the due date: the balance now
       // falls due on the deposit terms rather than the original invoice date.
-      const nextDocument =
+      const documentPatch =
         isDeposit && document.deposit.enabled && !document.deposit.paid
           ? {
-              ...document,
               deposit: { ...document.deposit, paid: true, paidAmount: amountMinor },
               dueDate: document.deposit.balanceDueDate ?? dueDateFor(date, document.termsId),
             }
-          : document;
+          : {};
 
-      // The status follows the balance. This is the only place a payment changes a
-      // document's status, so an invoice cannot be left showing "Final" after it has
-      // been part-paid or settled.
-      const resultAfter = calculate({
-        document: nextDocument,
+      // One recalculate-and-save: the stored totals, the status and the
+      // document move together, on the payments storage now holds (the
+      // replacement included, the original gone), the snapshot's tax codes
+      // for an issued document, and the settings' rounding.
+      const { document: settled, result: resultAfter } = await recalculateDocument({
+        document,
         lines: useEditorStore.getState().lines,
-        payments: [...useEditorStore.getState().payments, payment],
-        taxCodes: useEditorStore.getState().taxCodes,
-      });
-      const status = deriveDocumentStatus({
-        document: nextDocument,
-        balance: resultAfter.balance,
+        documentPatch,
         today: date,
       });
-
-      const settled: Document = { ...nextDocument, status };
-      await db.saveDocument(settled);
       await refreshDocuments();
       await reload();
 
@@ -165,7 +160,7 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
       if (over && outstanding >= 0) {
         const credit = clientCreditSchema.parse(
           newEntity({
-            clientId: nextDocument.clientId ?? '',
+            clientId: document.clientId ?? '',
             amount: amountMinor - outstanding,
             currency,
             source: 'payment',
@@ -174,7 +169,7 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
             note: `Overpayment against ${document.number}`,
           }),
         );
-        if (nextDocument.clientId) {
+        if (document.clientId) {
           await db.saveClientCredit(credit);
           push({
             tone: 'info',
@@ -236,25 +231,14 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
     if (!document) return;
     const db = storage();
     await db.deletePayment(payment.id);
-    await db.saveDocument({ ...document });
+    // The totals and the status follow the payment out, through the same
+    // service the record path uses — a Paid invoice must not stay Paid.
+    await recalculateDocument({ document, lines: useEditorStore.getState().lines });
     await refreshDocuments();
     await reload();
     setEditingPayment(null);
     setReplacing(null);
     push({ tone: 'info', title: 'Payment removed' });
-  };
-
-  /** Replace the payment being corrected, once the replacement exists. */
-  const commitEdit = async (replacement: Payment) => {
-    const db = storage();
-    if (!document) return;
-    if (replacing) await db.deletePayment(replacing);
-    await db.savePayment(replacement);
-    await db.saveDocument(document);
-    await refreshDocuments();
-    await reload();
-    setReplacing(null);
-    setEditingPayment(null);
   };
 
   return (
@@ -310,7 +294,7 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount" required>
-            <CurrencyInput value={amountMinor} onChange={setAmount} currency={currency} allowNegative />
+            <CurrencyInput ariaLabel="Payment amount" value={amountMinor} onChange={setAmount} currency={currency} allowNegative />
           </Field>
 
           <Field label="Date" required>

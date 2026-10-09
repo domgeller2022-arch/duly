@@ -48,6 +48,46 @@ Tests: three new compliance cases (registered draft passes, pro-forma exempt,
 issue-date GST status governs), and a reservation case that reproduces the
 backdated year boundary and asserts three distinct numbers.
 
+### Remediation R2 — one recalculate-and-save service
+
+The structural root behind a dozen findings from both audits:
+`calculate()` was called from about a dozen places, each passing a different
+subset of tax codes, payments and rounding method, and each forgetting a
+different one. One service — `src/lib/documentService.ts` — now loads the
+bundle, picks the codes, calculates, applies totals and status, and saves.
+
+- **Recording a payment now moves everything.** The payment paths recorded a
+  payment but saved the document with the totals it already had, so the list,
+  the dashboard, the reports, bank matching and late fees all kept reading
+  the balance from before the payment. `record`, `correct` and `remove` in
+  the payments panel, and bank import's confirm, all go through the service —
+  the stored `totals.paid`, `balance` and the status change together. A
+  correcting payment no longer counts its replacement twice, and removing the
+  last payment takes a Paid invoice back to Finalised.
+- **An issued document calculates on its frozen tax codes.** Editing or
+  deactivating a tax code in settings used to reach into invoices clients
+  already hold — a $110 invoice became $100 the next time anything
+  recalculated it. The service reads the snapshot's frozen copy for issued
+  documents and the live table only for drafts, and the bulk re-file path
+  uses it too, so a re-file reproduces the PDF the client already has.
+- **A new document is calculated with real tax codes** — the editor's create
+  used to pass an empty codes list, which taxed every line at the GST
+  fallback rate.
+- **Undo and redo recompute the totals**, so the panels and the preview follow
+  the history instead of lagging one edit behind.
+- **"Mark paid" in the list records a real payment** for the outstanding
+  balance — the old override cleared the balance but left `totals.paid` at
+  zero, the two figures disagreeing forever.
+- **Every recalculation uses the settings' rounding method** — six call sites
+  silently used the ATO default even when the settings said otherwise.
+- The submit dialog's post-submit "download the PDF" path and the AI invoice
+  dialog's draft creation go through the service as well.
+
+Proven in the browser end to end: a GST-registered invoice of $110 submitted,
+a $50 payment recorded, and the stored row reading $110 total, $60 balance,
+Part paid. Unit tests cover the service directly: part payment, payment
+removal, and a deactivated GST code leaving an issued invoice untouched.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

@@ -27,6 +27,7 @@ import type {
   Payment,
 } from '@/core/schemas';
 import { calculate, applyTotals, type CalculationResult } from '@/core/calc/calculate';
+import { recalculateDocument, taxCodesFor } from '@/lib/documentService';
 import { signatureSchema } from '@/core/schemas/crm';
 import { storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
@@ -144,6 +145,24 @@ const HISTORY_LIMIT = 60;
 
 export const useEditorStore = create<EditorState>((set, get) => {
   let saveTimer: number | null = null;
+
+  /**
+   * The totals for a document/lines pair the editor already holds, using the
+   * same tax codes, payments and rounding the service uses. Undo and redo
+   * call it so the result follows the history instead of lagging one edit
+   * behind. Nothing is saved — the autosave the undo schedules does that.
+   */
+  function recompute(document: EditorState['document'], lines: DocumentLine[], state: EditorState): CalculationResult {
+    if (!document) return state.result as CalculationResult;
+    return calculate({
+      document,
+      lines,
+      payments: state.payments.filter((p) => p.documentId === document.id),
+      taxCodes: taxCodesFor(document, state.taxCodes),
+      roundingMethod: currentRoundingMethod,
+      clientCreditAvailable: state.client ? creditFor(state.client) : 0,
+    });
+  }
 
   function commit(
     patch: Partial<EditorState>,
@@ -292,10 +311,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     async create(args) {
       const { document, lines } = buildDocument(args);
-      const result = calculate({ document, lines, payments: [], taxCodes: [] });
-      const withTotals = applyTotals({ ...document }, result);
 
-      await storage().saveDocument(withTotals, lines);
+      // The one recalculate-and-save: real tax codes and the settings'
+      // rounding, not an empty codes list that taxed every line at 10%.
+      const { document: withTotals, result } = await recalculateDocument({
+        document,
+        lines,
+        deriveStatus: false,
+      });
 
       set({
         documentId: document.id,
@@ -537,9 +560,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const previous = state.history[state.history.length - 1];
       if (!previous || !state.document) return;
 
+      // Totals must follow the undo: the result is a live figure, not history.
+      const undone = recompute(previous.document, previous.lines, state);
       set({
         document: previous.document,
         lines: previous.lines,
+        result: undone,
         history: state.history.slice(0, -1),
         future: [
           { document: state.document, lines: state.lines, label: previous.label },
@@ -555,9 +581,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const next = state.future[0];
       if (!next || !state.document) return;
 
+      const redone = recompute(next.document, next.lines, state);
       set({
         document: next.document,
         lines: next.lines,
+        result: redone,
         history: [
           ...state.history,
           { document: state.document, lines: state.lines, label: next.label },

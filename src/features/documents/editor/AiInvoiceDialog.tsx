@@ -15,7 +15,7 @@ import { useAppStore, useActiveProfile } from '@/state/app';
 import { runAiTask } from '@/lib/ai';
 import { invoiceEntryTask, type InvoiceEntryResult } from '@/lib/aiTasks';
 import { createDocument } from '@/core/documents';
-import { applyTotals, calculate } from '@/core/calc/calculate';
+import { recalculateDocument } from '@/lib/documentService';
 import { newClient } from '@/core/schemas/crm';
 import { newEntity } from '@/core/schemas/common';
 import { Alert, Button, Dialog, Field, Select, TextInput, useToast } from '@/ui/components/base';
@@ -102,9 +102,12 @@ export function AiInvoiceDialog({ open, onClose }: { open: boolean; onClose: () 
         }),
       );
 
-      const result = calculate({ document, lines: parsedLines, payments: [], taxCodes });
-      const withTotals = applyTotals({ ...document }, result);
-      await (await import('@/adapters')).storage().saveDocument(withTotals, parsedLines);
+      await recalculateDocument({
+        document,
+        lines: parsedLines,
+        taxCodes,
+        deriveStatus: false,
+      });
 
       await useAppStore.getState().refresh();
       onClose();

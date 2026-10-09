@@ -15,8 +15,7 @@ import { Check, FileUp, X } from 'lucide-react';
 import { useAppStore } from '@/state/app';
 import { storage } from '@/adapters';
 import { matchTransactions, parseStatement, type MatchResult } from '@/lib/bankImport';
-import { calculate } from '@/core/calc/calculate';
-import { deriveDocumentStatus } from '@/core/documents';
+import { recalculateDocument } from '@/lib/documentService';
 import { paymentSchema } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
 import {
@@ -134,15 +133,9 @@ export function BankImportScreen() {
       );
       await db.savePayment(payment);
 
-      const paymentsAfter = await db.listPayments();
-      const resultAfter = calculate({
-        document: invoice,
-        lines: await db.listDocumentLines(invoice.id),
-        payments: paymentsAfter.filter((p) => p.documentId === invoice.id),
-        taxCodes: useAppStore.getState().taxCodes,
-      });
-      const status = deriveDocumentStatus({ document: invoice, balance: resultAfter.balance, today });
-      await db.saveDocument({ ...invoice, status });
+      // One recalculate-and-save: the stored totals and the status follow the
+      // payment in, together, on the snapshot's codes for an issued document.
+      await recalculateDocument({ document: invoice, today });
       await refreshDocuments();
 
       setIgnored((prev) => new Set(prev).add(keyOf(target)));

@@ -21,10 +21,10 @@
 
 import type { BusinessProfile, Client, Document, Settings } from '@/core/schemas';
 import type { TaxCode } from '@/core/tax/tax';
-import { calculate } from '@/core/calc/calculate';
+import { paymentSchema } from '@/core/schemas/document';
+import { recalculateDocument } from '@/lib/documentService';
 import { files, storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
-import { deriveDocumentStatus } from '@/core/documents';
 import { finaliseDocument } from '@/lib/finalise';
 import { renderDocumentPdf } from '@/renderer/pdf';
 import { buildDocumentModel } from '@/renderer/model';
@@ -79,11 +79,13 @@ export async function bulkFinalise(documents: Document[], ctx: BulkContext): Pro
       }
 
       const client = ctx.clients.find((c) => c.id === document.clientId) ?? null;
-      const result = calculate({
+      const { result } = await recalculateDocument({
         document: bundle.document,
         lines: bundle.lines,
         payments: bundle.payments,
         taxCodes: ctx.taxCodes,
+        save: false,
+        deriveStatus: false,
       });
 
       await finaliseDocument({
@@ -135,14 +137,23 @@ export async function bulkMarkPaid(documents: Document[], today: string): Promis
     }
 
     try {
-      // The same derivation a real payment uses, so a manual mark and a recorded
-      // payment cannot leave the same invoice in two different states.
-      const marked: Document = {
-        ...document,
-        status: deriveDocumentStatus({ document, balance: 0, today }),
-        totals: { ...document.totals, balance: 0 },
-      };
-      await db.saveDocument(marked);
+      // A real payment for the outstanding balance, then one recalculate-and-
+      // save — so a manual mark and a recorded payment leave the same state
+      // everywhere: totals.paid moves, the balance clears, the status follows.
+      await db.savePayment(
+        paymentSchema.parse(
+          newEntity({
+            documentId: document.id,
+            date: today,
+            amount: document.totals.balance,
+            method: 'other',
+            reference: '',
+            note: 'Marked paid by hand from the documents list',
+            isDeposit: false,
+          }),
+        ),
+      );
+      await recalculateDocument({ document, today });
       await db.saveAuditLog(
         newEntity({
           entity: 'document',
@@ -235,11 +246,16 @@ export async function bulkRefile(documents: Document[], ctx: BulkContext): Promi
       }
 
       const client = ctx.clients.find((c) => c.id === document.clientId) ?? null;
-      const result = calculate({
+      // The re-file must print the frozen tax codes an issued document
+      // carries, not today's live table — a re-file after a rate change
+      // must reproduce the same PDF the client already has.
+      const { result } = await recalculateDocument({
         document: bundle.document,
         lines: bundle.lines,
         payments: bundle.payments,
         taxCodes: ctx.taxCodes,
+        save: false,
+        deriveStatus: false,
       });
 
       const model = buildDocumentModel({

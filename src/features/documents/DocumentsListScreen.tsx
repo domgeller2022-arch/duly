@@ -61,7 +61,7 @@ import {
   type BulkRequest,
 } from './BulkResultDialog';
 import { files, storage } from '@/adapters';
-import { calculate } from '@/core/calc/calculate';
+import { recalculateDocument } from '@/lib/documentService';
 import { tableCsv, zipBlob, renderBundlePdf } from '@/lib/exports';
 import { AiInvoiceDialog } from './editor/AiInvoiceDialog';
 import { cn } from '@/ui/lib/cn';
@@ -297,11 +297,15 @@ export function DocumentsListScreen({ kind = 'invoice' }: { kind?: DocumentKind 
           const bundle = await storage().getDocumentBundle(document.id);
           const profile = profiles.find((p) => p.id === document.profileId);
           if (!bundle || !profile) continue;
-          const result = calculate({
+          // An issued document re-renders on its frozen tax codes, so the
+          // exported PDF matches the one the client already has.
+          const { result } = await recalculateDocument({
             document: bundle.document,
             lines: bundle.lines,
             payments: bundle.payments,
             taxCodes,
+            save: false,
+            deriveStatus: false,
           });
           const blob = await renderBundlePdf({
             document: bundle.document,
