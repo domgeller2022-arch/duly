@@ -20,30 +20,34 @@ and the desktop produce the same document.
 | **Offline-first, local-only**               | The service worker precaches every asset. IndexedDB holds the data. There is no server.                           |
 | **Free forever**                            | Only MIT, Apache-2.0 and OFL dependencies. No paid APIs, no cloud database, no telemetry.                         |
 | **Fast to the second invoice**              | The first takes setup. Every one after that should take under a minute, via clients, catalogue items and presets. |
-| **Automate with rules, not AI**             | Deterministic if-then rules you can read and edit. AI is an optional add-on, off by default.                       |
+| **Automate with rules, not AI**             | Deterministic if-then rules you can read and edit. AI is an optional add-on, off by default.                      |
 | **One renderer, one truth**                 | The on-screen preview and the exported PDF come from the same view model and the same layout engine.              |
 | **Australian by default, global by design** | AUD, GST and ABN out of the box; every ISO 4217 currency and any tax rate.                                        |
 | **Your data is portable**                   | One database, plus full JSON export and automatic backups.                                                        |
 
 ## Status
 
-The plan, phases 0–10, is implemented. See [`CHANGELOG.md`](CHANGELOG.md) for
-the full audit trail of what was built and verified.
+The plan, phases 0–10, is implemented, then audited twice (a self-audit and an
+independent review) and remediated in ten phases — see the `Remediation R1`–
+`R10` sections of [`CHANGELOG.md`](CHANGELOG.md) for every fix and its proof.
+The gates that run on this machine: 455 unit tests, typecheck, lint, a
+production build, and all three browser checks (offline 21/21, editor 10/10
+**as a GST-registered business**, data 29/29) — on every push in CI.
 
-| Phase | Scope                                                    | Status                              |
-| ----- | -------------------------------------------------------- | ----------------------------------- |
-| 0     | Foundations, design system, app shell, offline PWA       | **Complete**                        |
-| 1     | Data layer, seed data, setup wizard, settings            | **Complete**                        |
-| 2     | Clients, contacts, ABN validation, item catalogue        | **Complete**                        |
-| 3     | Calculation engine and unit tests                        | **Complete** — 431 tests            |
-| 4     | Document editor and lifecycle                            | **Complete**                        |
-| 5     | PDF renderer and template studio                         | **Complete** — 21/21 offline checks |
-| 6     | Output: files, exports, email, email templates           | **Complete**                        |
-| 7     | Automation, dashboard, reports, bank import              | **Complete**                        |
-| 7B    | Time, expenses, projects, retainers, accountant exports  | **Complete**                        |
-| 8     | Desktop apps (Tauri) — macOS and Windows                 | **Complete** — builds and bundles   |
-| 9     | Android — phone layouts, share sheet, signed APK         | **Complete** — builds and signs     |
-| 10    | Duly Assist (optional AI)                                | **Complete** — off by default       |
+| Phase | Scope                                                   | Status                                                                               |
+| ----- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 0     | Foundations, design system, app shell, offline PWA      | **Complete**                                                                         |
+| 1     | Data layer, seed data, setup wizard, settings           | **Complete**                                                                         |
+| 2     | Clients, contacts, ABN validation, item catalogue       | **Complete**                                                                         |
+| 3     | Calculation engine and unit tests                       | **Complete**                                                                         |
+| 4     | Document editor and lifecycle                           | **Complete** — GST submit, payments and credit fixed in R1–R3                        |
+| 5     | PDF renderer and template studio                        | **Complete** — offline checks include the acceptance gate                            |
+| 6     | Output: files, exports, email, email templates          | **Complete** — exports fixed in R6                                                   |
+| 7     | Automation, dashboard, reports, bank import             | **Complete** — engines corrected in R8/R9                                            |
+| 7B    | Time, expenses, projects, retainers, accountant exports | **Complete** — draw-down and layouts in R6/R8                                        |
+| 8     | Desktop apps (Tauri) — macOS and Windows                | **Mostly verified** — macOS builds here; Windows build and device send are CI/manual |
+| 9     | Android — phone layouts, share sheet, signed APK        | **Built, device check manual** — keychain limitation documented                      |
+| 10    | Duly Assist (optional AI)                               | **Complete** — off by default; receipt eval set needs real photos                    |
 
 ### What ships
 
@@ -98,29 +102,36 @@ npx tauri android build --apk --target aarch64       # Android: signed APK
 ```
 
 The desktop app feature-detects Tauri and installs its adapters: native files,
-SMTP and the keychain, with the same IndexedDB storage the web uses. The JSON
-export in Settings → Data is the one-time importer from a web install.
+SMTP and the keychain, with the same IndexedDB storage the web uses (the JSON
+export in Settings → Data is the one-time importer from a web install).
+
+What is verified where: the Rust half compiles for both the desktop and the
+Android targets, the macOS app and `.dmg` build on this machine, and the
+browser checks run on every push in CI. What is **not** verified here: a real
+Windows build, and any device testing — the Android keychain falls back to a
+non-persistent in-memory store (the keyring crate has no Android backend),
+and the on-device send and file paths are manual checks still to be made.
 
 ### Scripts
 
-| Command                  | What it does                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------- |
-| `npm run dev`            | Development server                                                                            |
-| `npm run build`          | Typecheck and produce a production build in `dist/`                                           |
-| `npm run preview`        | Serve the production build                                                                    |
-| `npm test`               | The unit test suite (Vitest)                                                                  |
-| `npm run test:watch`     | Tests, re-running on change                                                                   |
-| `npm run coverage`       | Tests with a coverage report                                                                  |
-| `npm run typecheck`      | TypeScript, no emit                                                                           |
-| `npm run lint`           | ESLint                                                                                        |
-| `npm run format`         | Prettier, writing changes                                                                     |
-| `npm run fonts`          | Bundle the OFL fonts as TTF into `public/fonts`                                               |
-| `npm run icons`          | Generate the PWA icons from the SVG mark                                                      |
-| `npm run tauri`          | The Tauri CLI (dev, build, android)                                                           |
-| `npm run verify:offline` | Build, then drive a real browser to prove the app works offline, including the acceptance gate |
-| `npm run verify:data`    | Build, then prove the data layer in a browser: setup, ABN, clients, items, export and restore |
-| `npm run verify`         | Both browser checks                                                                           |
-| `npx tsx scripts/eval-ai.mts [limit]` | The AI evaluation set against a configured local endpoint                        |
+| Command                               | What it does                                                                                   |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `npm run dev`                         | Development server                                                                             |
+| `npm run build`                       | Typecheck and produce a production build in `dist/`                                            |
+| `npm run preview`                     | Serve the production build                                                                     |
+| `npm test`                            | The unit test suite (Vitest)                                                                   |
+| `npm run test:watch`                  | Tests, re-running on change                                                                    |
+| `npm run coverage`                    | Tests with a coverage report                                                                   |
+| `npm run typecheck`                   | TypeScript, no emit                                                                            |
+| `npm run lint`                        | ESLint                                                                                         |
+| `npm run format`                      | Prettier, writing changes                                                                      |
+| `npm run fonts`                       | Bundle the OFL fonts as TTF into `public/fonts`                                                |
+| `npm run icons`                       | Generate the PWA icons from the SVG mark                                                       |
+| `npm run tauri`                       | The Tauri CLI (dev, build, android)                                                            |
+| `npm run verify:offline`              | Build, then drive a real browser to prove the app works offline, including the acceptance gate |
+| `npm run verify:data`                 | Build, then prove the data layer in a browser: setup, ABN, clients, items, export and restore  |
+| `npm run verify`                      | Both browser checks                                                                            |
+| `npx tsx scripts/eval-ai.mts [limit]` | The AI evaluation set against a configured local endpoint                                      |
 
 ### The acceptance gate
 
@@ -167,13 +178,13 @@ desktop means swapping implementations and changing nothing else, because no
 feature code touches IndexedDB, the file system, SMTP, the keychain or an AI
 endpoint directly.
 
-| Adapter          | Web                                                 | Desktop and Android                 |
-| ---------------- | --------------------------------------------------- | ----------------------------------- |
-| `StorageAdapter` | IndexedDB (Dexie)                                   | IndexedDB (works in the webview)    |
-| `FileAdapter`    | File System Access API, with a download fallback    | Native file system, silent writes   |
-| `MailAdapter`    | Save the PDF, copy the message, open the mail app   | SMTP via lettre, or the mail app    |
-| `SecretAdapter`  | Session memory, honestly reported as not persistent | OS keychain                         |
-| `AiAdapter`      | Any OpenAI-compatible endpoint over HTTP            | The same — HTTP is HTTP             |
+| Adapter          | Web                                                 | Desktop and Android                                                 |
+| ---------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+| `StorageAdapter` | IndexedDB (Dexie)                                   | IndexedDB (works in the webview)                                    |
+| `FileAdapter`    | File System Access API, with a download fallback    | Native file system, silent writes                                   |
+| `MailAdapter`    | Save the PDF, copy the message, open the mail app   | SMTP via lettre, or the mail app                                    |
+| `SecretAdapter`  | Session memory, honestly reported as not persistent | OS keychain (Android: no OS store — passwords do not persist there) |
+| `AiAdapter`      | Any OpenAI-compatible endpoint over HTTP            | The same — HTTP is HTTP                                             |
 
 ## The parts worth reading first
 

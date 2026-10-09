@@ -141,7 +141,7 @@ ids **and remapped internal references** — now backs them all.
 
 - **Copies keep their section discounts.** Every copy gave lines new ids but
   left a section discount's target (and each line's section membership)
-  pointing at the *old* document's lines, so the discount silently vanished —
+  pointing at the _old_ document's lines, so the discount silently vanished —
   duplicates, quote conversions, progress invoices, recurring runs and credit
   notes were all affected, and a credit note of a discounted invoice could
   refund more than was charged. `copyLinesOnto` remaps both references with
@@ -407,12 +407,53 @@ tests, new file); the description probe re-run green.
 - The deposit cents input, the AI dialog's due days and the Rust command
   fixes named in this batch were already landed in R5 and R6.
 
-Deferred, named honestly: splitting one bank line across *several* invoices
+Deferred, named honestly: splitting one bank line across _several_ invoices
 (the amount edit covers a part payment against one invoice), the AI spend
 cap and "show what will be sent" preview, and the lazy load of attachment
 bytes — the app loads whole attachment data URLs into memory on refresh,
 which matters once receipts accumulate; the fix is an adapter-level
 metadata-plus-fetch pair.
+
+### Remediation R11 — the documentation tells the truth
+
+The independent review named nine claims the README and changelog made that
+the code did not back up. After R1–R10 the code backs them up; this pass
+makes the docs say what is actually verified, and no more.
+
+- **The README's status table is honest per phase**: desktop is "mostly
+  verified" (macOS builds on this machine; the Windows build and a real
+  SMTP send are CI/manual), Android is "built, device check manual" with
+  the keychain limitation named, and the AI receipt evaluation set still
+  needs real photos. The adapter table says what the Android secret store
+  really is.
+- **A "verified where" note** in the desktop section: what runs in CI, what
+  builds here, and what remains a manual device check.
+- **The build journal's historical claims stand as history** — the phase
+  write-ups describe what was believed true at the time; where an audit
+  found otherwise, the Remediation section above names it and the fix.
+- **The remediation plan and both audits stay out of the public repo**
+  (gitignored): they list unfixed ceilings and security notes, and belong
+  with the project, not in it.
+
+The claims the review specifically tested, re-checked after remediation:
+numbers are never reissued (R1, test); credit notes reduce their invoice from
+the first one (R3, test); the password never reaches the webview on a real
+send (R5, resolved in Rust); the tray genuinely keeps the app alive
+(close-to-hide, R5); Windows bundle targets exist (R5, conf + workflow);
+recurring catch-up is bounded and end conditions enforced (R8, tests); every
+imported row validates (R7, tests); the numbering pattern survives a submit
+(R1); and `gstStatusAt` — dead code at audit time — now drives both the
+compliance checks and the GST switch.
+
+---
+
+## Remediation complete
+
+Ten phases, one commit each, every fix with its test or browser proof where
+testable. The two audits' findings are closed except the four named deferrals
+(bank-line split across invoices, AI spend cap and request preview,
+attachment lazy-loading, the Android keychain backend) — each named where the
+user will meet it, none silent.
 
 ### Phase 5 — PDF renderer and template studio: complete
 
@@ -625,15 +666,15 @@ working, which is part of the acceptance and tested (`src/lib/ai.test.ts`).
   anything leaves: AI off refuses everything, and Local-only refuses any
   endpoint that is not localhost — both tested, which is the acceptance.
 - **First-wave features**:
-  - *Invoice entry*: "Bill Acme 3 days consulting at $1,200/day" produces a
+  - _Invoice entry_: "Bill Acme 3 days consulting at $1,200/day" produces a
     correct draft (tested — the parsed result calculated is 3 × $1,200), and
     the review form edits every field before Accept creates a draft. AI can
     never submit, send or record a payment.
-  - *Receipt capture (vision)*: Scan on the expense form reads a photo into
+  - _Receipt capture (vision)_: Scan on the expense form reads a photo into
     the fields; the photo stays as the receipt attachment on save.
-  - *Email drafting*: Draft in the email dialog fills the subject and body
+  - _Email drafting_: Draft in the email dialog fills the subject and body
     from the document's details; the user sends.
-  - *Ask-your-data*: the Reports screen answers questions from the report
+  - _Ask-your-data_: the Reports screen answers questions from the report
     numbers only — no write tools, so a question can never change anything.
 - **The evaluation set** (`src/lib/aiEval.ts` + `scripts/eval-ai.mts`): fifty
   requests generated from a fixed grid, each with the parse a correct model
