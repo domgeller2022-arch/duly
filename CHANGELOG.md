@@ -335,8 +335,6 @@ working, which is part of the acceptance and tested (`src/lib/ai.test.ts`).
 
 Written as each early phase was built; kept in phase order, oldest first.
 
----
-
 ### Phase 0 — Foundations
 
 Status: **complete**.
