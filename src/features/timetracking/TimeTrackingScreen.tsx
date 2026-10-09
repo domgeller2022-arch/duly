@@ -22,6 +22,7 @@ import {
   timeLinesFromGroups,
   expenseLines,
   markTimeInvoiced,
+  drawDownRetainers,
   type TimeGrouping,
 } from '@/lib/timeBilling';
 import { createDocument } from '@/core/documents';
@@ -199,6 +200,17 @@ export function TimeTrackingScreen() {
           invoicedOnDocumentId: document.id,
           updatedAt: new Date().toISOString(),
         });
+      }
+
+      // The retainer draws down by exactly what was billed: the time and
+      // expense lines' gross, and the hours for a time-based retainer.
+      if (invoiceClientId) {
+        const drawnMinor = [...timeLines, ...expenseLinesToAdd].reduce((acc, line) => {
+          const computed = result.lines.get(line.id);
+          return acc + Math.max(0, computed?.gross ?? 0);
+        }, 0);
+        const drawnHours = groups.reduce((acc, group) => acc + group.hours, 0);
+        await drawDownRetainers({ clientId: invoiceClientId, minor: drawnMinor, hours: drawnHours });
       }
 
       await refresh();

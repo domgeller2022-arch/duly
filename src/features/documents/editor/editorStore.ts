@@ -147,6 +147,34 @@ export const useEditorStore = create<EditorState>((set, get) => {
   let saveTimer: number | null = null;
 
   /**
+   * Rules, evaluated on save against the state the editor holds — the plan's
+   * "evaluation on save", not a 15-minute sweep writing behind the editor.
+   * The patch lands as a normal commit, so it is undoable and autosaved.
+   */
+  async function applyRulesOnSave(document: NonNullable<EditorState['document']>, lines: DocumentLine[]): Promise<void> {
+    try {
+      const { useAppStore } = await import('@/state/app');
+      const rules = useAppStore.getState().rules.filter((r) => r.enabled && !r.deletedAt);
+      if (rules.length === 0 || document.status !== 'draft') return;
+      const { buildRuleContext } = await import('@/lib/automation/rules');
+      const { evaluateRules } = await import('@/core/engines/rules');
+      const context = await buildRuleContext(document, lines);
+      if (!context) return;
+      const outcome = evaluateRules(rules, context);
+      const changed = Object.entries(outcome.patch).filter(
+        ([key, value]) => (document as unknown as Record<string, unknown>)[key] !== value,
+      );
+      if (changed.length === 0) return;
+      commit(
+        {},
+        { label: `Rules: ${outcome.applied.map((a) => a.name).join(', ')}`, documentPatch: outcome.patch },
+      );
+    } catch {
+      // Rules are a convenience: a failure here must never block the save.
+    }
+  }
+
+  /**
    * The totals for a document/lines pair the editor already holds, using the
    * same tax codes, payments and rounding the service uses. Undo and redo
    * call it so the result follows the history instead of lagging one edit
@@ -219,6 +247,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
       future: options.history === false ? state.future : [],
       ...patch,
     });
+
+    // The plan says rules evaluate on save. Fire-and-forget after the state
+    // lands: the rules' own commit (if anything matches) becomes a normal,
+    // undoable, autosaved edit — never a write behind the editor's back.
+    if (state.document.status === 'draft') {
+      void applyRulesOnSave(withTotals, nextLines);
+    }
 
     scheduleSave();
   }

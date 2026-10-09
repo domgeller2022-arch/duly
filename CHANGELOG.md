@@ -287,6 +287,48 @@ Tests: replace clears empty tables, merge preserves them, a newer-schema
 snapshot is refused, malformed rows skip, unknown keys skip (5 storage
 tests, new file); the description probe re-run green.
 
+### Remediation R8 — automation that does what its screen says
+
+- **Recurring schedules end when they say they end.** The runner never
+  consulted the end conditions — an "after 2 runs" monthly schedule produced
+  draft after draft forever — and a multi-date catch-up advanced the
+  original schedule each time, so three due dates counted one run and kept
+  only the last idempotency key. Both are fixed: the runner enforces the end
+  conditions, the catch-up is bounded by them, and each run advances the
+  schedule the previous run produced.
+- **A new schedule first runs when it says it will.** New schedules were born
+  with `nextRunDate: today`, so a monthly schedule set for the 1st and
+  created on the 6th fired immediately while its own preview said otherwise.
+  The first run is the first occurrence the frequency and day name — on
+  creation and whenever an unstarted schedule's day is edited.
+- **The scheduler's date is fresh.** A pass used the store's boot-time
+  `today`, so an app left open overnight (or in the tray) kept running
+  yesterday's overdue and recurring checks until a reload. Each pass takes
+  the date it runs at, and the visibility handler gets the same
+  re-entrancy guard as the timer.
+- **Late fees no longer re-bill or wipe payments.** "Separate invoice" mode
+  copied every line of the original invoice plus the fee — a second invoice
+  for work already billed; it is now a fee-only draft, linked to the invoice
+  it penalises, following the invoice's pricing mode. "Add a line" mode
+  overwrote the stored totals with `paid: 0` and wrote the document twice,
+  once with a corrupted shape; it goes through the recalculate-and-save
+  service, so payments survive and the totals and status move together. The
+  fee percentage multiplies through big.js — a float multiply misrounded
+  66.67% of $450.
+- **Rules evaluate on save, in the editor** — the plan's own wording, and
+  the fix for rules writing to storage behind an open editor: the patch
+  lands as a normal, undoable, autosaved commit against the state the
+  editor holds. A rule whose actions match the document as it stands no
+  longer rewrites it every fifteen minutes; only a changed value writes.
+  And the built-in "Overseas" rule no longer relabels an invoice as USD —
+  setting a currency converts nothing, so the rule export-rates and the
+  currency stays the user's decision. (The tests that asserted the old
+  behaviour were asserting the bug.)
+- **Retainers draw down.** Billing a retainer's client through "Invoice
+  unbilled time" now consumes the balance — money across the client's active
+  retainers, oldest first, and hours for the time-based ones — so the
+  balance and the low-balance alert are real figures.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

@@ -14,7 +14,7 @@ import type { RecurringSchedule } from '@/core/schemas/automation';
 import { recurringScheduleSchema, FREQUENCIES, RECURRING_END_CONDITIONS } from '@/core/schemas/automation';
 import { DOCUMENT_TYPES, type DocumentType } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
-import { nextRunAfter } from '@/core/engines/recurrence';
+import { firstRunOnOrAfter, nextRunAfter } from '@/core/engines/recurrence';
 import { useAppStore } from '@/state/app';
 import {
   Badge,
@@ -99,6 +99,9 @@ export function RecurringScreen() {
       });
       return;
     }
+    // The first run is the first occurrence the schedule actually names —
+    // a monthly schedule set for the 1st, created on the 6th, first runs the
+    // 1st of NEXT month, not today.
     setDraft(
       recurringScheduleSchema.parse({
         ...newEntity({}),
@@ -107,7 +110,15 @@ export function RecurringScreen() {
         name: 'Monthly retainer',
         profileId: profile.id,
         startDate: today,
-        nextRunDate: today,
+        nextRunDate: firstRunOnOrAfter(
+          {
+            frequency: 'monthly',
+            dayOfMonth: 1,
+            dayOfWeek: 1,
+            startDate: today,
+          },
+          today,
+        ),
       }),
     );
   };
@@ -118,7 +129,15 @@ export function RecurringScreen() {
     if (!draft) return;
     try {
       const parsed = recurringScheduleSchema.parse({ ...draft, updatedAt: new Date().toISOString() });
-      await saveRecurringSchedule(parsed as RecurringSchedule);
+      // A schedule that has never run starts at the first occurrence its
+      // frequency and day actually name — so editing the day of a new
+      // schedule moves the first run, and the preview never disagrees with
+      // what the scheduler will do.
+      const toSave: RecurringSchedule =
+        parsed.runsCompleted === 0 && !parsed.lastRunDate
+          ? { ...parsed, nextRunDate: firstRunOnOrAfter(parsed, parsed.startDate) }
+          : parsed;
+      await saveRecurringSchedule(toSave);
       push({ tone: 'success', title: 'Schedule saved' });
       setDraft(null);
     } catch (error) {

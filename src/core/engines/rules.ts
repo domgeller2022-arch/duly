@@ -325,7 +325,10 @@ export function builtinRules(stamp: { id: string; createdAt: string; updatedAt: 
   return [
     mk({
       id: 'rule_overseas',
-      name: 'Overseas clients are export-rated and billed in USD',
+      // Setting a currency is not a rule action: relabelling an invoice as
+      // USD converts nothing, and the prices would simply be wrong. The
+      // user picks a currency; the rule engine only decides tax treatment.
+      name: 'Overseas clients are export-rated',
       enabled: true,
       match: 'any',
       priority: 10,
@@ -334,10 +337,7 @@ export function builtinRules(stamp: { id: string; createdAt: string; updatedAt: 
       lastFiredAt: null,
       fireCount: 0,
       conditions: [{ field: 'client.tag', operator: 'equals', value: 'Overseas' }],
-      actions: [
-        { type: 'set_tax_code', field: '', value: 'tax_export' },
-        { type: 'set_currency', field: '', value: 'USD' },
-      ],
+      actions: [{ type: 'set_tax_code', field: '', value: 'tax_export' }],
     }),
     mk({
       id: 'rule_large_terms',

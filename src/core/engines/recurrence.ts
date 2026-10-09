@@ -116,11 +116,21 @@ export function dueRunDates(
 ): string[] {
   if (schedule.paused || !schedule.nextRunDate || !isDateString(schedule.nextRunDate)) return [];
 
+  // The end conditions bound the catch-up itself, not just the "should it run
+  // today" check: an "after 2 runs" schedule with 1 run done has exactly one
+  // due date left, and a schedule ending on a date has none on or after it.
+  let budget = maxCatchUpRuns;
+  if (schedule.endCondition === 'after_runs') {
+    budget = Math.min(budget, Math.max(0, schedule.endAfterRuns - schedule.runsCompleted));
+  }
+  const endsOn = schedule.endCondition === 'on_date' ? schedule.endOnDate : null;
+
   const dates: string[] = [];
   let cursor = schedule.nextRunDate;
 
   // The run date itself counts as due, so `cursor === today` is included.
-  while (dates.length < maxCatchUpRuns && !isAfter(cursor, today)) {
+  while (dates.length < budget && !isAfter(cursor, today)) {
+    if (endsOn && !isBefore(cursor, endsOn)) break;
     dates.push(cursor);
     cursor = nextRunAfter(schedule, cursor);
   }

@@ -15,6 +15,7 @@ import type { TimeEntry, Expense, Project } from '@/core/schemas/automation';
 import type { DocumentLine } from '@/core/schemas/document';
 import { documentLineSchema } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
+import { storage } from '@/adapters';
 
 export interface UnbilledGroup {
   /** Project id, or the date for date grouping. */
@@ -120,4 +121,47 @@ export function markTimeInvoiced(
     invoicedLineId: lineIdByEntry.get(entry.id) ?? null,
     updatedAt: new Date().toISOString(),
   }));
+}
+
+/**
+ * Draw a client's retainers down by what was just billed.
+ *
+ * The plan: "time and expense lines draw down the balance." The one place
+ * unbilled time and expenses become an invoice is the tracking screen's
+ * "Invoice unbilled time", so the draw-down happens there — money first
+ * across the client's active retainers, oldest first, then hours for the
+ * time-based ones.
+ */
+export async function drawDownRetainers(args: {
+  clientId: string;
+  minor: number;
+  hours: number;
+}): Promise<void> {
+  const db = storage();
+  const retainers = (await db.listRetainers())
+    .filter((r) => r.clientId === args.clientId && r.status === 'active' && !r.deletedAt)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  let moneyLeft = Math.max(0, args.minor);
+  let hoursLeft = Math.max(0, args.hours);
+
+  for (const retainer of retainers) {
+    const moneyDraw = Math.min(moneyLeft, Math.max(0, retainer.amount - retainer.consumedMinor));
+    const hoursHeld = Number.parseFloat(retainer.hours) || 0;
+    const hoursUsed = Number.parseFloat(retainer.consumedHours) || 0;
+    const hoursDraw = Math.min(hoursLeft, Math.max(0, hoursHeld - hoursUsed));
+
+    if (moneyDraw <= 0 && hoursDraw <= 0) continue;
+
+    await db.saveRetainer({
+      ...retainer,
+      consumedMinor: retainer.consumedMinor + moneyDraw,
+      consumedHours: (hoursUsed + hoursDraw).toFixed(4),
+      updatedAt: new Date().toISOString(),
+    } as (typeof retainer));
+
+    moneyLeft -= moneyDraw;
+    hoursLeft -= hoursDraw;
+    if (moneyLeft <= 0 && hoursLeft <= 0) break;
+  }
 }

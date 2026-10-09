@@ -576,16 +576,20 @@ describe('the rules engine', () => {
     };
   }
 
-  it('ships an overseas rule that sets the tax code and currency', () => {
+  it("ships an overseas rule that export-rates, and never relabels the currency", () => {
     const r = evaluateRules(rules, ctx());
     expect(r.applied.map((x) => x.id)).toContain('rule_overseas');
     expect(r.patch.taxCodeId).toBe('tax_export');
-    expect(r.patch.currency).toBe('USD');
+    // Setting a currency converts nothing — prices would simply be wrong —
+    // so the rule does not touch it.
+    expect(r.patch.currency).toBeUndefined();
+    const rule = rules.find((x) => x.id === 'rule_overseas')!;
+    expect(rule.actions.some((a) => a.type === 'set_currency')).toBe(false);
   });
 
   it('leaves an untagged client alone', () => {
     const r = evaluateRules(rules, ctx({ client: { ...client, tags: [] } as never }));
-    expect(r.patch.currency).toBeUndefined();
+    expect(r.patch.taxCodeId).toBeUndefined();
   });
 
   it('ships the large-invoice terms rule, disabled by default', () => {
@@ -701,7 +705,7 @@ describe('the rules engine', () => {
   it('logs every action in plain English', () => {
     const r = evaluateRules(rules, ctx());
     expect(r.log.join(' ')).toContain('Overseas clients are export-rated');
-    expect(r.log.some((l) => l.includes('set currency to USD'))).toBe(true);
+    expect(r.log.some((l) => l.includes('set tax code to'))).toBe(true);
   });
 
   it('describes a rule as a readable sentence', () => {
@@ -770,6 +774,19 @@ describe('recurring schedules', () => {
     // Opened on the 5th, schedule next-run 1 November, run once per month.
     const dates = dueRunDates({ ...base, nextRunDate: '2026-11-01', maxCatchUpRuns: 1 }, '2027-01-05');
     expect(dates).toEqual(['2026-11-01']);
+  });
+
+  it('an "after N runs" schedule has only its remaining runs due', () => {
+    expect(dueRunDates({ ...base, runsCompleted: 1, endCondition: 'after_runs', endAfterRuns: 2 }, '2027-06-01')).toHaveLength(1);
+    expect(
+      dueRunDates({ ...base, runsCompleted: 2, endCondition: 'after_runs', endAfterRuns: 2 }, '2027-06-01'),
+    ).toHaveLength(0);
+  });
+
+  it('a schedule ending on a date has no runs on or after it', () => {
+    const dates = dueRunDates({ ...base, endCondition: 'on_date', endOnDate: '2026-12-15' }, '2027-06-01');
+    expect(dates.length).toBeGreaterThan(0);
+    expect(dates.every((d) => d < '2026-12-15')).toBe(true);
   });
 
   it('catches up a few runs but not sixty', () => {

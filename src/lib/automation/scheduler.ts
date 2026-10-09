@@ -287,7 +287,10 @@ export async function startScheduler(): Promise<void> {
     if (running) return;
     running = true;
     try {
-      const result = await runSchedulerPass(useAppStore.getState().today);
+      // A fresh date every pass: the store's today is set at boot, so an app
+      // left open overnight (or in the tray) used to keep running yesterday's
+      // overdue and recurring checks until a reload.
+      const result = await runSchedulerPass(new Date().toISOString().slice(0, 10));
       if (result.documentsCreated > 0 || result.remindersQueued > 0) {
         await useAppStore.getState().refresh();
       }
@@ -303,20 +306,27 @@ export async function startScheduler(): Promise<void> {
 
   // Coming back to the tab is the other moment a pass is worth running: someone
   // who left Duly open overnight gets the morning's reminders without a reload.
-  document.addEventListener('visibilitychange', onVisibility);
+  const onVisibilityGuarded = () => {
+    // The same guard as the timer: a visibility change during a slow pass
+    // used to start a second one alongside it.
+    if (!document.hidden) void pass();
+  };
+  document.addEventListener('visibilitychange', onVisibilityGuarded);
+  visibilityHandler = onVisibilityGuarded;
 }
+
+/** The installed visibility handler, so stopScheduler can remove exactly it. */
+let visibilityHandler: (() => void) | null = null;
 
 export function stopScheduler(): void {
   if (timer !== null) {
     window.clearInterval(timer);
     timer = null;
   }
-  document.removeEventListener('visibilitychange', onVisibility);
-}
-
-function onVisibility(): void {
-  if (document.visibilityState !== 'visible') return;
-  void runSchedulerPass(useAppStore.getState().today);
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler);
+    visibilityHandler = null;
+  }
 }
 
 /** True while a pass is in flight, so the UI can show a quiet indicator. */

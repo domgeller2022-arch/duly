@@ -15,6 +15,7 @@ import {
   advance,
   alreadyConsumed,
   dueRunDates,
+  hasEnded,
   resolveLineVariables,
   runKey,
 } from '@/core/engines/recurrence';
@@ -47,18 +48,26 @@ export async function runRecurringSchedules(now: string): Promise<RecurringOutco
 
   for (const schedule of schedules) {
     if (schedule.paused || schedule.deletedAt) continue;
-    const dueDates = dueRunDates(schedule, now);
+    let current = schedule;
+    const dueDates = dueRunDates(current, now);
 
     for (const runDate of dueDates) {
       // Idempotency: a run key already consumed means this occurrence is done.
-      if (alreadyConsumed(schedule, runDate)) continue;
+      if (alreadyConsumed(current, runDate)) continue;
+      // The end conditions are enforced here, not only by the screen's
+      // "should it run today": an "after 2 runs" schedule used to run forever.
+      if (hasEnded(current, runDate)) break;
 
       try {
-        const outcome = await createRun(schedule.id, runDate);
+        const outcome = await createRun(current.id, runDate);
         if (outcome) {
           created.push(outcome);
+          // Each run advances the schedule the previous run produced — the
+          // old loop advanced the original every time, so a catch-up of three
+          // dates counted one run and kept only the last idempotency key.
+          current = advance(current, runDate);
           await db.saveRecurringSchedule({
-            ...advance(schedule, runDate),
+            ...current,
             lastRunDocumentId: outcome.document.id,
           });
         }

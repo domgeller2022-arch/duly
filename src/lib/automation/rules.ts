@@ -7,7 +7,7 @@
  */
 
 import { evaluateRules, type RuleContext } from '@/core/engines/rules';
-import type { Document } from '@/core/schemas/document';
+import type { Document, DocumentLine } from '@/core/schemas/document';
 import { calculate } from '@/core/calc/calculate';
 import { storage } from '@/adapters';
 
@@ -21,13 +21,16 @@ export interface RuleApplication {
 }
 
 /** Build the evaluation context for a document from stored records. */
-export async function buildRuleContext(document: Document): Promise<RuleContext | null> {
+export async function buildRuleContext(
+  document: Document,
+  editorLines?: DocumentLine[],
+): Promise<RuleContext | null> {
   const db = storage();
   const [clients, taxCodes, items, lines] = await Promise.all([
     db.getClient(document.clientId ?? ''),
     db.listTaxCodes(),
     db.listItems({ activeOnly: true }),
-    db.listDocumentLines(document.id),
+    editorLines ? Promise.resolve(editorLines) : db.listDocumentLines(document.id),
   ]);
 
   if (lines.length === 0 && !document.clientId) return null;
@@ -69,10 +72,15 @@ export async function applyRulesToDocument(document: Document): Promise<RuleAppl
   const outcome = evaluateRules(rules, context);
   if (outcome.applied.length === 0) return null;
 
-  const hasPatch = Object.keys(outcome.patch).length > 0;
-  if (hasPatch) {
-    await storage().saveDocument({ ...document, ...outcome.patch });
-  }
+  // Only write when a value actually changed. A rule whose actions match the
+  // document as it stands used to rewrite it anyway — every 15 minutes, and
+  // behind any editor that had it open.
+  const changed = Object.entries(outcome.patch).filter(
+    ([key, value]) => (document as unknown as Record<string, unknown>)[key] !== value,
+  );
+  if (changed.length === 0) return null;
+
+  await storage().saveDocument({ ...document, ...outcome.patch });
 
   return {
     documentId: document.id,

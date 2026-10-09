@@ -13,7 +13,7 @@ import type { Document, DocumentLine } from '@/core/schemas/document';
 import { documentLineSchema, documentSchema } from '@/core/schemas/document';
 import { newEntity } from '@/core/schemas/common';
 import { storage } from '@/adapters';
-import { calculate } from '@/core/calc/calculate';
+import { recalculateDocument } from '@/lib/documentService';
 import { daysOverdue } from '@/core/validation/dates';
 import { percentToFraction } from '@/core/money/money';
 
@@ -36,7 +36,6 @@ export async function runLateFeeEngine(today: string): Promise<LateFeeOutcome[]>
   const policies = (await db.listLateFeePolicies()).filter((p) => p.enabled && !p.deletedAt);
   if (policies.length === 0) return [];
 
-  const taxCodes = await db.listTaxCodes();
   const documents = await db.listDocuments();
   const applied: LateFeeOutcome[] = [];
 
@@ -58,24 +57,24 @@ export async function runLateFeeEngine(today: string): Promise<LateFeeOutcome[]>
       if (fee <= 0) continue;
 
       if (policy.applyAs === 'invoice') {
-        applied.push(await createFeeInvoice(doc, lines, policy, fee, taxCodes, lateBy));
+        applied.push(await createFeeInvoice(doc, policy, fee, lateBy));
         continue;
       }
 
       const next = [...lines, buildFeeLine(doc, policy, fee)];
-      const recalculated = calculate({ document: doc, lines: next, taxCodes });
 
-      await db.saveDocument({
-        ...doc,
-        lines: undefined as never,
-        totals: { ...doc.totals, ...toTotals(recalculated) },
-        lateFeeApplied: true,
-      } as Document);
-      // Rewrite the whole line set so the new fee line is persisted with it.
-      await db.saveDocument(
-        { ...doc, lateFeeApplied: true, totals: { ...doc.totals, ...toTotals(recalculated) } },
-        next,
-      );
+      // One recalculate-and-save. The raw calculate used to overwrite the
+      // stored totals here with `paid: 0` — wiping every recorded payment
+      // from the balance — and the document was written twice, once with a
+      // corrupted shape. The service loads the payments, applies the totals
+      // and the status together, and saves once.
+      const { document: withFee } = await recalculateDocument({
+        document: doc,
+        lines: next,
+        documentPatch: { lateFeeApplied: true },
+        today,
+      });
+      void withFee;
 
       applied.push({
         documentId: doc.id,
@@ -101,7 +100,9 @@ export function computeFeeAmount(
   let fee: number;
 
   if (kind === 'percent') {
-    fee = Math.round(base * Number(percentToFraction(value).toString()));
+    // The rate is a decimal string ("0.06667"): multiply through big.js and
+    // round once, exactly — a float multiply misrounded 66.67% of $450.
+    fee = Number(percentToFraction(value).times(base).round(0));
   } else {
     fee = Math.max(0, Math.round(Number(value) || 0));
   }
@@ -131,18 +132,16 @@ function buildFeeLine(
 
 async function createFeeInvoice(
   source: Document,
-  sourceLines: DocumentLine[],
   policy: import('@/core/schemas/automation').LateFeePolicy,
   amount: number,
-  taxCodes: Awaited<ReturnType<ReturnType<typeof storage>['listTaxCodes']>>,
   lateBy: number,
 ): Promise<LateFeeOutcome> {
   const db = storage();
   const documentId = newEntity({}).id;
-  const lines = [
-    ...sourceLines.map((line, index) => ({ ...line, id: newEntity({}).id, documentId, position: index })),
-    buildFeeLine({ ...source, id: documentId }, policy, amount),
-  ];
+  // A fee-only draft: one line, the fee, linked to the invoice it penalises.
+  // The old version copied every line of the original invoice too — a second
+  // invoice for work already billed.
+  const lines = [buildFeeLine({ ...source, id: documentId }, policy, amount)];
 
   const invoice = documentSchema.parse(
     newEntity({
@@ -154,17 +153,19 @@ async function createFeeInvoice(
       dueDate: source.dueDate,
       termsId: source.termsId,
       currency: source.currency,
+      // The fee follows the invoice's pricing mode, not today's default.
+      taxMode: source.taxMode,
       taxCodeId: source.taxCodeId,
       designTemplateId: source.designTemplateId,
       notes: `Late payment fee for ${source.number}.`,
       reference: source.number,
       tags: ['late-fee'],
       linkedDocumentIds: [source.id],
+      reviewRequired: true,
     }),
   );
 
-  const recalculated = calculate({ document: invoice, lines, taxCodes });
-  await db.saveDocument({ ...invoice, totals: { ...invoice.totals, ...toTotals(recalculated) } }, lines);
+  await db.saveDocument(invoice, lines);
   await db.saveDocument({ ...source, lateFeeApplied: true });
 
   return {
@@ -176,17 +177,3 @@ async function createFeeInvoice(
   };
 }
 
-function toTotals(result: ReturnType<typeof calculate>) {
-  return {
-    subtotal: result.subtotal,
-    discount: result.discount,
-    tax: result.tax,
-    total: result.total,
-    paid: result.paid,
-    balance: result.balance,
-    creditApplied: result.creditApplied,
-    currency: result.currency,
-    audEquivalent: result.audEquivalent,
-    gstPayable: result.gstPayable,
-  };
-}
