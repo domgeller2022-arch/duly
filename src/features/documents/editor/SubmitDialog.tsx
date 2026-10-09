@@ -170,6 +170,30 @@ export function SubmitDialog({
         }
       }
       if (settings.onSubmitAction === 'open_email') {
+        // The finalised PDF rides along: on desktop it is the SMTP
+        // attachment; on the web it is saved next to the message so the
+        // user attaches it in one motion. A failure to render it does not
+        // undo the submit.
+        try {
+          const blob = await renderBundlePdf({
+            document: outcome.document,
+            lines,
+            payments,
+            result,
+            profile,
+            client,
+            template:
+              useAppStore.getState().designTemplates.find((t) => t.id === outcome.document.designTemplateId) ?? null,
+            taxCodes: useEditorStore.getState().taxCodes,
+          });
+          await files().saveAs(`${outcome.document.number || outcome.document.id}.pdf`, blob);
+        } catch {
+          push({
+            tone: 'warning',
+            title: 'The PDF could not be rendered for the email',
+            description: 'Export it from the document whenever you like.',
+          });
+        }
         await platform().mail.openInMailApp({
           to: client?.email ? [client.email] : [],
           subject: `${outcome.document.number || outcome.document.id} from ${profile.name}`,

@@ -95,6 +95,7 @@ const SETTINGS_NAV: NavItem[] = [{ to: '/settings', label: 'Settings', icon: Set
 /* ------------------------------------------------------------------ */
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isNarrow = useMediaQuery('(max-width: 900px)');
@@ -117,17 +118,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     location.pathname.startsWith('/settings') ||
     location.pathname.startsWith('/style-guide');
 
-  // Cmd/Ctrl+K opens the command palette from anywhere.
+  // Cmd/Ctrl+K opens the command palette; Cmd/Ctrl+N starts a new invoice —
+  // the plan's shortcuts, wired at the shell so they work from any screen.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen(true);
+      }
+      if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        navigate('/invoices/new');
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [navigate]);
 
   const toggleCollapsed = useCallback(() => {
     if (isNarrow) {

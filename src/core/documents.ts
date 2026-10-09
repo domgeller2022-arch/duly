@@ -24,7 +24,8 @@ import { documentLineSchema, documentSchema } from '@/core/schemas/document';
 import { newEntity, newId } from '@/core/schemas/common';
 import type { Settings } from '@/core/schemas/settings';
 import { dueDateFor, quoteExpiry } from '@/core/validation/dates';
-import { percentToFraction } from '@/core/money/money';
+import { percentToFraction, toMajorNumber } from '@/core/money/money';
+import { currencyDecimals } from '@/core/money/currencies';
 import { DEFAULT_TAX_CODES } from '@/core/tax/tax';
 import { headingFor, patternPrefix } from '@/core/engines/numbering';
 
@@ -480,8 +481,9 @@ export function searchCatalogue(
 }
 
 function formatPriceHint(minor: number, currency: string): string {
-  const decimals = currency === 'JPY' || currency === 'KRW' || currency === 'VND' ? 0 : 2;
-  return `${currency} ${(minor / Math.pow(10, decimals)).toFixed(decimals)}`;
+  // One currency table for the whole app: this three-code special case was
+  // the third copy of the decimals logic and wrong for BHD, OMR, TND, CLP…
+  return `${currency} ${toMajorNumber(minor, currency).toFixed(currencyDecimals(currency))}`;
 }
 
 /* ------------------------------------------------------------------ */

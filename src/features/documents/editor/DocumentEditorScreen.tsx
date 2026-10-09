@@ -173,6 +173,16 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
         if (fromQuoteId) {
           const bundle = await db.getDocumentBundle(fromQuoteId);
           if (cancelled || !bundle) return;
+          // Opening the same conversion link twice used to create two
+          // invoices from one quote. A quote that already points at its
+          // invoice opens that invoice instead.
+          if (bundle.document.convertedToDocumentId) {
+            const existing = await db.getDocument(bundle.document.convertedToDocumentId);
+            if (existing) {
+              if (!cancelled) navigate(`/invoices/${existing.id}`, { replace: true });
+              return;
+            }
+          }
           const built = convertQuoteToInvoice(
             bundle.document,
             bundle.lines,
@@ -488,8 +498,21 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
 
   const handleVoid = useCallback(async () => {
     if (!doc) return;
-    const voided = voidDocument(doc, 'Voided from the editor', new Date().toISOString());
+    const now = new Date().toISOString();
+    const voided = voidDocument(doc, 'Voided from the editor', now);
     await storage().saveDocument(voided, lines);
+    // The audit entry the bulk void path writes, from the one place a
+    // document is voided by hand.
+    await storage().saveAuditLog(
+      newEntity({
+        entity: 'document',
+        entityId: voided.id,
+        action: 'void',
+        summary: `Voided ${voided.number || voided.draftNumber} from the editor`,
+        actor: 'user',
+        note: 'Voided from the editor',
+      }),
+    );
     await refreshDocuments();
     await reload();
     setShowVoid(false);

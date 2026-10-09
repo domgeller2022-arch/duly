@@ -208,7 +208,9 @@ export function headingFor(gstRegistered: boolean, type: DocumentType): string {
     case 'invoice':
       return gstRegistered ? 'Tax Invoice' : 'Invoice';
     case 'quote':
-      return gstRegistered ? 'Tax Quote' : 'Quote';
+      // A quote is a quote: "Tax Quote" is not a term the ATO uses, and
+      // the compliance rules exempt quotes from the tax-invoice heading.
+      return 'Quote';
     case 'credit_note':
       return gstRegistered ? 'Tax Credit Note' : 'Credit Note';
     case 'proforma':

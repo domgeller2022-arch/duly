@@ -18,6 +18,7 @@ import { matchTransactions, parseStatement, type MatchResult } from '@/lib/bankI
 import { recalculateDocument } from '@/lib/documentService';
 import { toMajorNumber } from '@/core/money/money';
 import { paymentSchema } from '@/core/schemas/document';
+import { bankTransactionSchema } from '@/core/schemas/automation';
 import { newEntity } from '@/core/schemas/common';
 import {
   Alert,
@@ -93,7 +94,27 @@ export function BankImportScreen() {
       });
       return;
     }
-    setResults(matchTransactions(transactions, documents, payments));
+    // Rows already handled — confirmed here before, or ignored — come back
+    // pre-decided, so re-importing the same statement (or opening the app
+    // again) does not re-offer them. The key is the statement line itself:
+    // date, amount, reference.
+    void storage()
+      .listBankTransactions()
+      .then((existing) => {
+        const handled = new Set(
+          existing
+            .filter((t) => t.status === 'confirmed' || t.status === 'ignored')
+            .map((t) => `${t.date}|${t.amount}|${t.reference}`),
+        );
+        setResults(matchTransactions(transactions, documents, payments));
+        setIgnored((prev) => {
+          const next = new Set(prev);
+          for (const t of transactions) {
+            if (handled.has(`${t.date}|${t.amountMinor}|${t.reference}`)) next.add(keyOfRow(t));
+          }
+          return next;
+        });
+      });
     push({
       tone: 'success',
       title: `${transactions.length} transaction${transactions.length === 1 ? '' : 's'} read`,
@@ -134,6 +155,25 @@ export function BankImportScreen() {
       );
       await db.savePayment(payment);
 
+      // The decision persists: re-importing the same statement (or opening
+      // the app again) does not re-offer a line that was already confirmed.
+      await db.saveBankTransaction(
+        bankTransactionSchema.parse(
+          newEntity({
+            date: target.transaction.date,
+            description: target.transaction.description,
+            amount: target.transaction.amountMinor,
+            reference: target.transaction.reference,
+            matchedDocumentId: invoice.id,
+            matchedPaymentId: payment.id,
+            matchMethod: target.status === 'payment' && target.confidence === 'high' ? 'amount_and_reference' : 'none',
+            matchConfidence: target.confidence === 'high' ? 1 : 0.5,
+            status: 'confirmed',
+            note: 'Confirmed in bank import',
+          }),
+        ),
+      );
+
       // One recalculate-and-save: the stored totals and the status follow the
       // payment in, together, on the snapshot's codes for an issued document.
       await recalculateDocument({ document: invoice, today });
@@ -155,8 +195,11 @@ export function BankImportScreen() {
     }
   };
 
-  const keyOf = (result: MatchResult): string =>
-    result.transaction.externalId + result.transaction.date + result.transaction.amountMinor;
+  /** The stable identity of a statement line: external id when the format
+   *  has one, else its date, amount and reference. */
+  const keyOfRow = (t: { externalId: string; date: string; amountMinor: number; reference: string }): string =>
+    t.externalId || `${t.date}|${t.amountMinor}|${t.reference}`;
+  const keyOf = (result: MatchResult): string => keyOfRow(result.transaction);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
@@ -280,7 +323,21 @@ export function BankImportScreen() {
                           size="sm"
                           variant="ghost"
                           icon={<X className="size-3.5" aria-hidden />}
-                          onClick={() => setIgnored((prev) => new Set(prev).add(keyOf(result)))}
+                          onClick={() => {
+                            setIgnored((prev) => new Set(prev).add(keyOf(result)));
+                            void storage().saveBankTransaction(
+                              bankTransactionSchema.parse(
+                                newEntity({
+                                  date: result.transaction.date,
+                                  description: result.transaction.description,
+                                  amount: result.transaction.amountMinor,
+                                  reference: result.transaction.reference,
+                                  status: 'ignored',
+                                  note: 'Ignored in bank import',
+                                }),
+                              ),
+                            );
+                          }}
                         >
                           Ignore
                         </Button>

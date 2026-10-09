@@ -146,8 +146,17 @@ export function csvCell(value: string | number | null | undefined): string {
 
 /** Build CSV text from rows, quoting only what needs it. */
 export function writeCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
-  const lines = [headers.map(csvCell).join(',')];
-  for (const row of rows) lines.push(row.map(csvCell).join(','));
+  // Formula injection: a value that starts with =, +, -, @ or a tab runs as
+  // a formula when the file opens in Excel or Sheets — a client named
+  // "=HYPERLINK(...)" is an attack. The leading apostrophe neutralises it
+  // and Excel drops it from the displayed value.
+  const safe = (value: string | number | null | undefined) => {
+    const cell = csvCell(value);
+    if (typeof value === 'string' && /^[=+@\t\r]/.test(value.trimStart())) return `'${cell}`;
+    return cell;
+  };
+  const lines = [headers.map(safe).join(',')];
+  for (const row of rows) lines.push(row.map(safe).join(','));
   return lines.join('\r\n');
 }
 

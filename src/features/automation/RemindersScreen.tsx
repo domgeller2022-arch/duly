@@ -14,7 +14,7 @@
 import { useMemo } from 'react';
 import { Check, Mail, X } from 'lucide-react';
 import { useAppStore } from '@/state/app';
-import { platform } from '@/adapters';
+import { platform, storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
 import { Button, Card, Chip, EmptyState, Panel, Table, Td, Th, useToast } from '@/ui/components/base';
 import { PageHeader } from '@/ui/components/layout';
@@ -60,7 +60,19 @@ export function RemindersScreen() {
     if (!reminder) return;
     const document = documents.find((d) => d.id === reminder.documentId);
     const client = clients.find((c) => c.id === document?.clientId) ?? null;
+    // Everyone flagged to receive this client's invoices — the client's own
+    // address plus its invoice contacts — not just the main line.
     const to = client?.email ? [client.email] : [];
+    const cc: string[] = [];
+    const bcc: string[] = [];
+    if (client) {
+      const contacts = await storage().listContacts(client.id);
+      for (const contact of contacts) {
+        if (!contact.receivesInvoices || !contact.email) continue;
+        const line = contact.field === 'cc' ? cc : contact.field === 'bcc' ? bcc : to;
+        if (!line.includes(contact.email)) line.push(contact.email);
+      }
+    }
 
     const sendingProfile = useAppStore
       .getState()
@@ -72,14 +84,19 @@ export function RemindersScreen() {
       to,
       subject: reminder.subject,
       body: reminder.body,
+      cc,
+      bcc,
       attachments: [],
     });
 
+    // SMTP actually sent; the web's mailto merely opened the mail app, and
+    // the reminder says so rather than claiming a send that did not happen.
+    const actuallySent = result.ok && result.via === 'smtp';
     await saveReminder({
       ...reminder,
-      status: result.ok ? 'sent' : 'failed',
+      status: !result.ok ? 'failed' : actuallySent ? 'sent' : 'approved',
       approvedAt: new Date().toISOString(),
-      sentAt: result.ok ? new Date().toISOString() : null,
+      sentAt: actuallySent ? new Date().toISOString() : null,
       updatedAt: new Date().toISOString(),
     });
 

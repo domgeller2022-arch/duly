@@ -369,6 +369,51 @@ tests, new file); the description probe re-run green.
   app runs on the business's timezone, so a registration recorded today in
   Sydney was not yet in effect; the callers now pass the app's today.
 
+### Remediation R10 — the smaller issues, batched
+
+- **CSV exports neutralise formula injection.** A value beginning with `=`,
+  `+`, `@` or a tab runs as a formula when the file opens in Excel or
+  Sheets — a client named `=HYPERLINK(...)` was an attack surface. The
+  writer prefixes those cells with an apostrophe, which Excel drops from
+  the displayed value.
+- **Opening a quote-conversion link twice makes one invoice.** A quote that
+  already points at its invoice navigates there instead of converting
+  again.
+- **Voiding from the editor writes the audit entry** the bulk path always
+  wrote — the hand-void left no trace.
+- **Reminders go to everyone flagged to receive invoices**, on the line the
+  contact chose (To/CC/BCC), not just the client's own address. And a
+  reminder is `sent` only when SMTP actually sent it; the web's mailto
+  leaves it `approved`, because opening a mail app is not a send.
+- **"Open email after submit" saves the PDF next to the message**, so the
+  one click a submit is allowed actually hands over the attachment.
+- **The buyer-ABN note reads sensibly with no ABN on file** — it used to
+  print a bare full stop where the formatted (empty) ABN went.
+- **Quotes are headed "Quote"** — registered or not; "Tax Quote" is not a
+  term the ATO uses and the compliance rules exempt quotes.
+- **`Cmd/Ctrl+N` starts a new invoice from any screen**, alongside the
+  palette's `Cmd/Ctrl+K`.
+- **One currency table for the whole app.** The PDF renderer kept its own
+  14-entry copy — wrong for BHD, OMR, TND, CLP, ISK and every other code the
+  plan's ISO 4217 list carries — and `formatPriceHint` had a third
+  three-code special case. Both read `currencies.ts` now.
+- **Bank import remembers its decisions.** Confirmed and ignored lines
+  persist as bank-transaction records, so re-importing the same statement
+  (or opening the app again) does not re-offer a line that was already
+  decided. The line's identity is its external id when the format has one,
+  else date + amount + reference.
+- **The line menu says what a discount below a section does** — it applies
+  to that section — at the point of choice.
+- The deposit cents input, the AI dialog's due days and the Rust command
+  fixes named in this batch were already landed in R5 and R6.
+
+Deferred, named honestly: splitting one bank line across *several* invoices
+(the amount edit covers a part payment against one invoice), the AI spend
+cap and "show what will be sent" preview, and the lazy load of attachment
+bytes — the app loads whole attachment data URLs into memory on refresh,
+which matters once receipts accumulate; the fix is an adapter-level
+metadata-plus-fetch pair.
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by

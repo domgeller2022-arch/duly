@@ -273,7 +273,9 @@ export function runComplianceChecks(input: ComplianceInput): ComplianceCheck[] {
         id: 'buyer-abn',
         severity: 'info',
         title: 'No buyer ABN on file',
-        detail: `${formatAbn(client?.taxId ?? '')}${idInvalid ? ' fails its checksum' : ''}. The buyer’s name is present, which satisfies the rule, but their ABN is useful for them.`,
+        detail: `${
+          client?.taxId ? `The ABN ${formatAbn(client.taxId)}${idInvalid ? ' fails its checksum' : ''}.` : 'No ABN is on file for this client.'
+        } The buyer’s name is present, which satisfies the rule, but their ABN is useful for them.`,
         rule: 'Invoices of $1,000 or more require the buyer’s identity or ABN.',
         remedy: 'Add the buyer’s ABN on the client record.',
       });

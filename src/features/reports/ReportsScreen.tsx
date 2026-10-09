@@ -196,7 +196,7 @@ export function ReportsScreen() {
     return [...keys.entries()]
       .map(([key, entry]) => ({ key, ...entry }))
       .sort((a, b) => a.key.localeCompare(b.key));
-  }, [invoices, today]);
+  }, [invoices, creditNotes, today]);
 
   const gstLabel = (key: string): string => key.replace('-Q', ' Q');
 

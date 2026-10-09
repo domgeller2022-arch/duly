@@ -100,7 +100,7 @@ export function DashboardScreen() {
       reviewRequired,
       overdueQuotes,
     };
-  }, [scoped, today]);
+  }, [scoped, today, payments]);
 
   /** Aged receivables, by days past due. */
   const aged = useMemo(() => {

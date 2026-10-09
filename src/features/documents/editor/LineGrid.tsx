@@ -575,7 +575,7 @@ function RowMenu({
             Add note here
           </MenuItem>
           <MenuItem icon={<Percent className="size-3.5" aria-hidden />} onClick={onAddDiscount}>
-            Add discount here
+            Add discount {line.type === 'section' ? '(applies to the section above)' : 'here'}
           </MenuItem>
           <MenuItem onClick={onDuplicate}>Duplicate this line</MenuItem>
           <MenuSeparator />

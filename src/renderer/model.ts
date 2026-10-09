@@ -20,6 +20,7 @@ import type { TaxCode } from '@/core/tax/tax';
 import { canUseInclusiveGstStatement, GST_RATE } from '@/core/tax/tax';
 import type { CalculationResult } from '@/core/calc/calculate';
 import type { Address } from '@/core/schemas/common';
+import { getCurrency } from '@/core/money/currencies';
 import { formatMoney } from '@/core/money/money';
 import { formatDate, formatDateForFilename, termLabel, resolveTerms } from '@/core/validation/dates';
 import { headingFor, documentTypeLabel } from '@/core/engines/numbering';
@@ -471,25 +472,14 @@ export function formatMoneyFor(
   return formatMoney({ minor, currency: model.currency }, { symbol: options?.showSymbol !== false });
 }
 
-const CURRENCY_META: Record<string, { symbol: string; decimals: number }> = {
-  AUD: { symbol: '$', decimals: 2 },
-  NZD: { symbol: '$', decimals: 2 },
-  USD: { symbol: '$', decimals: 2 },
-  CAD: { symbol: '$', decimals: 2 },
-  EUR: { symbol: '€', decimals: 2 },
-  GBP: { symbol: '£', decimals: 2 },
-  JPY: { symbol: '¥', decimals: 0 },
-  KRW: { symbol: '₩', decimals: 0 },
-  VND: { symbol: '₫', decimals: 0 },
-  KWD: { symbol: 'KD', decimals: 3 },
-  INR: { symbol: '₹', decimals: 2 },
-  CHF: { symbol: 'CHF', decimals: 2 },
-  SGD: { symbol: '$', decimals: 2 },
-  HKD: { symbol: '$', decimals: 2 },
-};
-
+/**
+ * One currency table for the whole app. The renderer used to keep its own
+ * 14-entry copy, wrong for BHD, OMR, TND, CLP, ISK and everything else the
+ * plan's ISO 4217 list carries; `currencies.ts` is the single source.
+ */
 export function currencyInfo(code: string): { symbol: string; decimals: number } {
-  return CURRENCY_META[code] ?? { symbol: code, decimals: 2 };
+  const meta = getCurrency(code);
+  return { symbol: meta.symbol || code, decimals: meta.decimals };
 }
 
 function formatAbnForPrint(abn: string): string {
