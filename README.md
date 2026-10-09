@@ -27,7 +27,7 @@ and the desktop produce the same document.
 
 ## Status
 
-The plan, phases 0–10, is implemented. See [`Changelog.md`](Changelog.md) for
+The plan, phases 0–10, is implemented. See [`CHANGELOG.md`](CHANGELOG.md) for
 the full audit trail of what was built and verified.
 
 | Phase | Scope                                                    | Status                              |

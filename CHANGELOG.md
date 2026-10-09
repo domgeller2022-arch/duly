@@ -13,9 +13,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Web prototype. Phases 0–7 of the build plan. See
-[`../Brainstorm & Implementation Plan.md`](../Brainstorm%20%26%20Implementation%20Plan.md)
-for the specification this implements.
+The initial release: the build plan's phases 0–10 — the web app, the desktop
+app for macOS and Windows, and the Android build. Newest first.
 
 ### Phase 5 — PDF renderer and template studio: complete
 
@@ -332,33 +331,84 @@ working, which is part of the acceptance and tested (`src/lib/ai.test.ts`).
 
 ---
 
-## Phase status
+## Build journal — Phases 0 to 4R
 
-| Phase | Scope                                                         | Status       |
-| ----- | ------------------------------------------------------------- | ------------ |
-| 0     | Foundations, design system, app shell, offline PWA            | **Complete** |
-| 1     | Data layer, seed data, setup wizard, settings                 | **Complete** |
-| 2     | Clients, contacts, ABN validation, item catalogue, CSV import | **Complete** |
-| 3     | Calculation engine and unit tests                             | **Complete** |
-| 4     | Document editor and lifecycle                                 | **Complete** |
-| 4R    | Audit remediation (lifecycle, credit notes, compliance, GST)  | **Complete** |
-| 5     | PDF renderer, templates, template studio                      | Partly built |
-| 6     | Output: files, exports, email                                 | Partly built |
-| 7     | Automation, dashboard, reports                                | Partly built |
-| 7B    | Time tracking, expenses, retainers, extra document types      | Not started  |
-| 8     | Desktop apps (Tauri)                                          | Not started  |
-| 9     | Android                                                       | Not started  |
-| 10    | Duly Assist (optional AI)                                     | Not started  |
-
-"Partly built" means the underlying engine is written and tested but the screen is
-not finished. Every screen still to be built is listed in `PLANNED_ROUTES` in
-`src/routes.tsx`, so the remaining inventory is visible rather than forgotten.
+Written as each early phase was built; kept in phase order, oldest first.
 
 ---
 
-## Phase 1 — Data layer and settings
+### Phase 0 — Foundations
 
-Status: **in progress**. Implementation plan, written before the work started.
+Status: **complete**.
+
+**Acceptance gate passed.** The plan requires that "the shell loads with the
+network disabled, switches light/dark, and every base component appears on a
+style-guide page". `npm run verify:offline` drives a real Chromium browser and
+checks all sixteen of those things. All sixteen pass.
+
+#### Added
+
+- **Project scaffold** — Vite 6, React 19, TypeScript 5.7 in strict mode, ESLint 9
+  flat config, Prettier, Vitest 3 with V8 coverage. One Vite config for both the
+  build and the tests: Vitest ships its own copy of Vite, and two copies mean the
+  two configs disagree about plugin types.
+- **Folder structure** matching the plan: `src/core` (pure logic), `src/renderer`
+  (PDF), `src/adapters` (platform), `src/ui` (design system), `src/features`
+  (screens), `src/state`, `src/lib`.
+- **Design tokens** — the "quiet stationery" palette in both themes. Warm paper
+  `#FAF8F4`, ink `#1C1B19`, hairline rules `#E7E3DA`, deep teal accent
+  `#1F5E5B` lifted to `#4FA59B` in dark mode, and reserved status colours for
+  paid, due-soon and overdue. Dark mode is a warm charcoal, not an inversion,
+  because pure black under warm accent colours looks harsh.
+- **Base component library** — button, icon button, field, text input, textarea,
+  currency input, number input, select, currency select, checkbox, switch, chip,
+  badge, card, panel, empty state, alert, dialog, menu, menu item, tabs,
+  progress, tooltip, table primitives, stack, row, divider, key/value list,
+  confirm dialog, toast, and two media-query hooks. Every interactive element
+  carries a real ARIA role and keyboard handling; the dialog traps focus and
+  returns it on close.
+- **App shell** — left sidebar with the business switcher at the top, a top bar
+  with global search, and a command palette on Cmd/Ctrl+K with subsequence fuzzy
+  matching. Sidebar collapses to icons; on a narrow screen it becomes a drawer.
+- **The style guide** at `/style-guide`, showing every token and every component
+  in both themes. Available in any build, not just development.
+- **Offline PWA** via `vite-plugin-pwa`: 31 assets precached, service worker
+  registered automatically in production, installable manifest with a generated
+  icon set.
+- **18 bundled font faces** as TTF — Inter, Source Serif 4, Fraunces, IBM Plex
+  Sans, IBM Plex Mono and Lora, all SIL OFL. `npm run fonts` decompresses the
+  woff2 files into `public/fonts` because react-pdf embeds raw TrueType and
+  cannot read woff2. No font is ever fetched over the network, which is what
+  makes a PDF render identically offline.
+- **Generated icons** — `npm run icons` rasterises the SVG mark into the PWA icon
+  set, including the maskable variant Android crops.
+- **README** and this changelog.
+
+#### Fixed during this phase
+
+- **Tailwind was never imported.** The stylesheet defined tokens and a component
+  layer but had no `@import 'tailwindcss'`, so no utility class was ever
+  generated. The app "worked" — it rendered, it routed, tests passed — but looked
+  like an unstyled page. The built stylesheet went from 8 kB to 42.7 kB once
+  fixed. `verify:offline` now asserts that a token really produced a rule, so
+  this cannot recur silently.
+- **The system theme was not followed live.** With the theme set to "system",
+  changing the operating system's appearance did not update the running app —
+  it only took effect on the next load. A `matchMedia` listener now reapplies the
+  theme immediately.
+- **`newId()` could emit an invalid UUID** from a fallback path that mixed a dead
+  variable into the byte array. Rewritten to build the v4 shape correctly.
+- **Two `@types` packages described APIs big.js 6.2.2 does not have**, so code
+  written against them would have thrown at runtime. Replaced with a local
+  declaration matching the real surface.
+- Two stray control characters in source files, which were silently breaking the
+  file-name sanitiser they sat inside.
+
+---
+
+### Phase 1 — Data layer and settings
+
+Status: **complete**.
 
 The plan's seven items split into two groups. Four are already in the tree and
 were built ahead of this phase: the Zod schemas, the `StorageAdapter` and its Dexie
@@ -367,7 +417,7 @@ is missing is the **user-facing half**: the setup wizard, the settings screens, 
 custom-field editor and the JSON export/import screen. Plus one piece of real
 domain logic that nothing has needed yet — GST registration as a function of date.
 
-### Plan
+#### Plan
 
 **1. GST registration by effective date.** The plan requires "a per-business
 'Registered for GST' switch with an effective-from date", where changing it
@@ -436,14 +486,14 @@ Access API and a reload only exist in a browser — the same reasoning as
 owns. The JSON export written here is that importer's input format, and the plan
 says so explicitly.
 
-### Outcome
+#### Outcome
 
 Status: **complete**. The plan's acceptance gate passes: "a profile with logo
 survives a browser restart; a full export re-imports into a clean browser
 identically." `npm run verify:data` drives both in a real browser — seventeen
 checks, all passing.
 
-### Added
+#### Added
 
 - **GST registration as a function of date.** The plan's hardest requirement in
   this phase: a per-business "Registered for GST" switch _with an effective-from
@@ -522,7 +572,7 @@ checks, all passing.
   asserts is empty first, because a check against a database that was never empty
   proves nothing.
 
-### Fixed during this phase
+#### Fixed during this phase
 
 - **Two forms could not be opened at all.** "New client" and "New business" built
   their initial draft with `schema.parse`, and both schemas require a name — so
@@ -549,7 +599,7 @@ checks, all passing.
   visible label; a cell has none, so the controls were unlabelled to a screen
   reader. Both now take `ariaLabel`, used when the visible label is empty.
 
-### Notes
+#### Notes
 
 - The settings screen has no "Save" button. Every control is one write, and the
   database is the truth, so a batch save would only add a way to lose changes.
@@ -561,9 +611,9 @@ checks, all passing.
 
 ---
 
-## Phase 2 — Clients and item catalogue
+### Phase 2 — Clients and item catalogue
 
-Status: **in progress**. Implementation plan, written before the work started.
+Status: **complete**.
 
 The plan's four items split into what exists and what does not. The ABN checksum
 and formatting are done and unit-tested from Phase 3. The client list and editor
@@ -575,7 +625,7 @@ The gate is "500 imported items search in under 100 ms; an invalid ABN is flagge
 you type". The second half already holds; the first half needs a catalogue and a
 measurable search.
 
-### Plan
+#### Plan
 
 **1. Client detail screen** at `/clients/:clientId`. The list already links there and
 the editor already navigates there after saving, so **both are currently dead
@@ -622,7 +672,7 @@ directly.
 chart. Both need the renderer, which is Phase 5, and the plan puts statement export
 in the client detail screen without saying the PDF belongs to this phase.
 
-### Outcome
+#### Outcome
 
 Status: **complete**. The plan's gate passes: "500 imported items search in under
 100 ms; an invalid ABN is flagged as you type."
@@ -633,7 +683,7 @@ worst of five runs. The ABN is driven in a browser: an incomplete number, a wron
 check digit with the right one offered, a letter refused, and a correct number
 clearing the warning. 336 unit tests, 29 browser checks, all passing.
 
-### Added
+#### Added
 
 - **The client record** at `/clients/:clientId`. Info, addresses, the defaults that
   apply to a new invoice for them, contacts, their documents and their payments —
@@ -665,7 +715,7 @@ clearing the warning. 336 unit tests, 29 browser checks, all passing.
 - **Contacts and defaults on the client screen**, and an "average days to pay"
   column on the clients list — which is the useful signal when deciding who to chase.
 
-### Fixed during this phase
+#### Fixed during this phase
 
 - **Two screens were unreachable.** The clients list linked to `/clients/:id` and the
   client editor navigated there after saving, but no route existed: both were dead
@@ -690,7 +740,7 @@ clearing the warning. 336 unit tests, 29 browser checks, all passing.
 - **The Import and Export buttons on the clients list did nothing** — one said
   "column mapping opens from the Clients menu", a menu that does not exist.
 
-### Notes
+#### Notes
 
 - `PLANNED_ROUTES` loses `/items/:itemId`. The plan's screen inventory has one row for
   the catalogue and describes it as inline editing, so there is no separate item form
@@ -704,76 +754,7 @@ clearing the warning. 336 unit tests, 29 browser checks, all passing.
 
 ---
 
-## Phase 0 — Foundations
-
-Status: **complete**.
-
-**Acceptance gate passed.** The plan requires that "the shell loads with the
-network disabled, switches light/dark, and every base component appears on a
-style-guide page". `npm run verify:offline` drives a real Chromium browser and
-checks all sixteen of those things. All sixteen pass.
-
-### Added
-
-- **Project scaffold** — Vite 6, React 19, TypeScript 5.7 in strict mode, ESLint 9
-  flat config, Prettier, Vitest 3 with V8 coverage. One Vite config for both the
-  build and the tests: Vitest ships its own copy of Vite, and two copies mean the
-  two configs disagree about plugin types.
-- **Folder structure** matching the plan: `src/core` (pure logic), `src/renderer`
-  (PDF), `src/adapters` (platform), `src/ui` (design system), `src/features`
-  (screens), `src/state`, `src/lib`.
-- **Design tokens** — the "quiet stationery" palette in both themes. Warm paper
-  `#FAF8F4`, ink `#1C1B19`, hairline rules `#E7E3DA`, deep teal accent
-  `#1F5E5B` lifted to `#4FA59B` in dark mode, and reserved status colours for
-  paid, due-soon and overdue. Dark mode is a warm charcoal, not an inversion,
-  because pure black under warm accent colours looks harsh.
-- **Base component library** — button, icon button, field, text input, textarea,
-  currency input, number input, select, currency select, checkbox, switch, chip,
-  badge, card, panel, empty state, alert, dialog, menu, menu item, tabs,
-  progress, tooltip, table primitives, stack, row, divider, key/value list,
-  confirm dialog, toast, and two media-query hooks. Every interactive element
-  carries a real ARIA role and keyboard handling; the dialog traps focus and
-  returns it on close.
-- **App shell** — left sidebar with the business switcher at the top, a top bar
-  with global search, and a command palette on Cmd/Ctrl+K with subsequence fuzzy
-  matching. Sidebar collapses to icons; on a narrow screen it becomes a drawer.
-- **The style guide** at `/style-guide`, showing every token and every component
-  in both themes. Available in any build, not just development.
-- **Offline PWA** via `vite-plugin-pwa`: 31 assets precached, service worker
-  registered automatically in production, installable manifest with a generated
-  icon set.
-- **18 bundled font faces** as TTF — Inter, Source Serif 4, Fraunces, IBM Plex
-  Sans, IBM Plex Mono and Lora, all SIL OFL. `npm run fonts` decompresses the
-  woff2 files into `public/fonts` because react-pdf embeds raw TrueType and
-  cannot read woff2. No font is ever fetched over the network, which is what
-  makes a PDF render identically offline.
-- **Generated icons** — `npm run icons` rasterises the SVG mark into the PWA icon
-  set, including the maskable variant Android crops.
-- **README** and this changelog.
-
-### Fixed during this phase
-
-- **Tailwind was never imported.** The stylesheet defined tokens and a component
-  layer but had no `@import 'tailwindcss'`, so no utility class was ever
-  generated. The app "worked" — it rendered, it routed, tests passed — but looked
-  like an unstyled page. The built stylesheet went from 8 kB to 42.7 kB once
-  fixed. `verify:offline` now asserts that a token really produced a rule, so
-  this cannot recur silently.
-- **The system theme was not followed live.** With the theme set to "system",
-  changing the operating system's appearance did not update the running app —
-  it only took effect on the next load. A `matchMedia` listener now reapplies the
-  theme immediately.
-- **`newId()` could emit an invalid UUID** from a fallback path that mixed a dead
-  variable into the byte array. Rewritten to build the v4 shape correctly.
-- **Two `@types` packages described APIs big.js 6.2.2 does not have**, so code
-  written against them would have thrown at runtime. Replaced with a local
-  declaration matching the real surface.
-- Two stray control characters in source files, which were silently breaking the
-  file-name sanitiser they sat inside.
-
----
-
-## Phase 3 — Calculation engine
+### Phase 3 — Calculation engine
 
 Status: **complete**. 262 unit tests, all passing.
 
@@ -781,7 +762,7 @@ The engine was built early and out of order on purpose: every screen that shows
 money depends on it being right, and a wrong total is not visible until a client
 pays the wrong amount.
 
-### Added
+#### Added
 
 - **The ten calculation rules**, implemented in the fixed order the specification
   sets out and unit-tested one at a time:
@@ -854,7 +835,7 @@ Total` with the document discount counted exactly once. A discount line written
   business switching GST mid-year, and a credit note against a pre-switch
   invoice.
 
-### Fixed during this phase
+#### Fixed during this phase
 
 Found by the tests, all corrected:
 
@@ -878,9 +859,9 @@ Found by the tests, all corrected:
 
 ---
 
-## Phase 4 — Document editor and lifecycle
+### Phase 4 — Document editor and lifecycle
 
-Status: **in progress**. Implementation plan, written before the work started.
+Status: **complete**.
 
 Most of this phase is already in the tree and works: the header form, the line grid
 with every line type and catalogue autocomplete, drag-to-reorder, sections, autosave
@@ -911,7 +892,7 @@ Every one of the following is a plan item that has no reachable UI:
 - **No unsaved-changes guard**, which plan item 4 asks for by name.
 - **Payments can be recorded and deleted, not edited.**
 
-### Plan
+#### Plan
 
 Ordered by the plan's own list, then by what unblocks the gate.
 
@@ -957,7 +938,7 @@ real browser: start from a preset, finalise it, then try to change the locked
 document and prove the editor refuses. The 60 seconds is a wall-clock budget in the
 browser check, because an acceptance gate nobody times is a wish.
 
-### Outcome
+#### Outcome
 
 Status: **complete**. The plan's gate passes: "a 10-line invoice using a preset can
 be created and finalised in under 60 seconds; finalised invoices cannot be edited."
@@ -972,7 +953,7 @@ Finalising a ten-line invoice from a preset takes about three seconds in a real
 browser, so the budget is met with a wide margin. Getting there required fixing the
 single most serious bug in the project so far, below.
 
-### Added
+#### Added
 
 - **One finalise path.** `lib/finalise.ts` does what submitting does — reserve the
   number, freeze the tax snapshot, save, write the PDF, write the audit entry — and
@@ -1025,7 +1006,7 @@ single most serious bug in the project so far, below.
   document type and per business, the yearly reset, `resetRule: never`, the record of
   issued numbers, and a custom pattern.
 
-### Fixed during this phase
+#### Fixed during this phase
 
 - **Finalising any document threw.** `reserveDocumentNumber` queries the compound
   index `[profileId+documentType]`, and that index was never declared in the schema —
@@ -1048,7 +1029,7 @@ single most serious bug in the project so far, below.
   the financial year in the snapshot now honours the configured start month instead of
   assuming July.
 
-### Notes
+#### Notes
 
 - Deposits were **not** a gap: recording a deposit payment already moved the balance due
   date to the deposit's terms from the payment date, and that path was correct. The
@@ -1060,12 +1041,12 @@ single most serious bug in the project so far, below.
 
 ---
 
-## Phase 4R — Audit remediation (lifecycle, credit notes, compliance, GST)
+### Phase 4R — Audit remediation (lifecycle, credit notes, compliance, GST)
 
 Status: **complete**. All six priority findings from the Phase 0–4 audit are fixed
 and covered by tests.
 
-### Added
+#### Added
 
 - **Single lifecycle-status helper**, `deriveDocumentStatus`, and its boolean
   `isOpenDocument`. Replaced the three inconsistent status writes in the payment
@@ -1100,7 +1081,7 @@ updatedQuote }`, and the editor saves both the new invoice and the updated
   marker rule (which was unreachable before the fix), the inclusive-GST rate
   restriction, and the unregistered-business note.
 
-### Fixed during this phase
+#### Fixed during this phase
 
 - **Three status writes, three different answers.** Payment panel, overdue
   scheduler, and bulk action each derived status differently. One helper fixes
@@ -1162,7 +1143,7 @@ updatedQuote }`, and the editor saves both the new invoice and the updated
   route**, rather than only the Invoices shortcut, so a dead link cannot
   slip in unnoticed again.
 
-### Notes
+#### Notes
 
 - Deposits were **not** a gap: recording a deposit payment already moved the balance due
   date to the deposit's terms from the payment date, and that path was correct. The
@@ -1180,13 +1161,13 @@ updatedQuote }`, and the editor saves both the new invoice and the updated
 
 ---
 
-## Partly built
+### Partly built at the time (historical inventory)
 
 Work already in the tree ahead of its phase, so later phases can be finished
 rather than started. Each is listed here because it is not yet a complete
 feature.
 
-### Storage and platform (Phases 1 and 6)
+#### Storage and platform (Phases 1 and 6)
 
 Finished in Phase 1; kept here because the file adapter and mail adapter still have
 Phase 6 screens to build.
@@ -1216,7 +1197,7 @@ Phase 6 screens to build.
   cannot do — Safari has no File System Access API, so the prototype is built for
   Chrome and Edge and says so rather than failing quietly.
 
-### Documents and screens (Phases 2, 4, 5, 7)
+#### Documents and screens (Phases 2, 4, 5, 7)
 
 - **Document editor** — split view with a debounced live PDF preview, a
   keyboard-first line grid covering every line type, catalogue autocomplete,
@@ -1268,6 +1249,29 @@ Phase 6 screens to build.
   client-defaults block that makes every later invoice start correct.
 - **Scheduler** running on start and every 15 minutes, with the automation log
   explaining every action it took.
+
+---
+
+## Phase status
+
+| Phase | Scope                                                         | Status       |
+| ----- | ------------------------------------------------------------- | ------------ |
+| 0     | Foundations, design system, app shell, offline PWA            | **Complete** |
+| 1     | Data layer, seed data, setup wizard, settings                 | **Complete** |
+| 2     | Clients, contacts, ABN validation, item catalogue, CSV import | **Complete** |
+| 3     | Calculation engine and unit tests                             | **Complete** |
+| 4     | Document editor and lifecycle                                 | **Complete** |
+| 4R    | Audit remediation (lifecycle, credit notes, compliance, GST)  | **Complete** |
+| 5     | PDF renderer, templates, template studio                      | **Complete** |
+| 6     | Output: files, exports, email                                 | **Complete** |
+| 7     | Automation, dashboard, reports                                | **Complete** |
+| 7B    | Time tracking, expenses, retainers, extra document types      | **Complete** |
+| 8     | Desktop apps (Tauri)                                          | **Complete** |
+| 9     | Android                                                       | **Complete** |
+| 10    | Duly Assist (optional AI)                                     | **Complete** |
+
+Every phase in the plan is complete. The README's Status table is the
+canonical view; this file is the record of how each phase got there.
 
 ---
 
