@@ -23,6 +23,38 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R26 — tests for the automation runners
+
+- **The recurring runner, the scheduler and the bulk actions have tests now.**
+  The third check found all three at 0% coverage — the end-condition fix, the
+  catch-up and idempotency behaviour, and the bulk gates had nothing to catch
+  them breaking again. Runner-level tests cover: a recurring "after N runs"
+  end condition (exactly two drafts); a four-month catch-up that then creates
+  nothing on a second pass; a consumed run key that stops a duplicate; the
+  scheduler's disabled gate, its single daily backup, and a due schedule; and
+  bulk finalise (skips an empty draft and a missing business), mark paid
+  (records the payment, clears the balance, skips drafts/void/already-paid) and
+  re-file (skips an unfiled PDF and a draft).
+
+### Remediation R25 — the accountant export edge cases
+
+Three fixes to the Xero/MYOB layouts (M10), each with a test.
+
+- **A line on "Document default" exports under the document's tax code.** Such
+  a line has no tax code of its own, so it was written as "GST Free Income"
+  even though GST applied — a silently understated GST line. The export falls
+  back to the document's tax code, as the calculation already does.
+- **Per-unit prices keep sub-cent precision.** The unit price was rounded to
+  the cent before export, so a 3 × $3.33 line less 10% exported as $3.00 and
+  came to $9.00 in the accountant's system instead of $8.99. Four decimals are
+  written now, so the line total reconciles.
+- **Payments export in the invoice's currency**, not always AUD: a ¥5,000
+  payment was written as 50. Both the Xero and MYOB payment files use the
+  invoice's currency.
+
+Still manual, and named: importing the output into a real Xero demo company,
+which needs a Xero login this environment does not have.
+
 ### Remediation R24 — the last wrong business, the Bridge test send, and the submit wording
 
 Four one-line fixes from the third check.
