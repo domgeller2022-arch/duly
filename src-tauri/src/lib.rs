@@ -208,23 +208,32 @@ fn send_smtp_blocking(args: SendArgs) -> SendResult {
     }
 }
 
+/// True for a loopback host: `localhost`, `127.0.0.1`, `::1`.
+fn is_loopback(host: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+}
+
 /// The transport for one send: implicit TLS, STARTTLS, or plain.
 ///
-/// Invalid certificates are accepted only when the account carries a pinned
-/// fingerprint — the user explicitly trusting this server's certificate —
-/// never as a blanket rule for a provider or a test send.
+/// An invalid certificate is accepted only for a **loopback** server — Proton
+/// Mail Bridge listens on 127.0.0.1 and presents its own certificate. Ticking
+/// "trust this certificate" for a remote host no longer switches verification
+/// off: a self-signed local certificate is the case this is for, and a remote
+/// host that fails verification is a real problem rather than a setting.
 /// ponytail: a true byte-level fingerprint comparison needs a custom rustls
-/// verifier; accept-invalid-certs-gated-on-explicit-trust is the ceiling
-/// until one is wired in.
+/// verifier; loopback-gated accept-invalid is the ceiling until one is wired
+/// in.
 fn smtp_transport(args: &SendArgs, password: &str) -> Result<SmtpTransport, String> {
     let wants_tls = args.secure || args.starttls;
-    let trusted = args
+    let trust_requested = args
         .pinned_fingerprint
         .as_deref()
         .map(|f| !f.trim().is_empty())
         .unwrap_or(false);
+    let accept_invalid = trust_requested && wants_tls && is_loopback(&args.host);
 
-    let mut builder = if trusted && wants_tls {
+    let mut builder = if accept_invalid {
         let mut tls_builder = TlsParameters::builder(args.host.clone());
         tls_builder = tls_builder.dangerous_accept_invalid_certs(true);
         let params = tls_builder

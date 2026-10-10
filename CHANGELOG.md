@@ -23,6 +23,18 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R27 — certificate trust only for a local server
+
+- **The certificate-trust box no longer weakens verification for a remote
+  server.** Ticking it switched TLS verification off for that account wherever
+  it pointed. A self-signed certificate the user chooses to trust is Proton
+  Bridge on `127.0.0.1`, and that is the only case the trust is honoured for
+  now — a remote host is verified normally even with the box ticked. (A true
+  byte-level fingerprint comparison still needs a custom rustls verifier; this
+  closes the hazard the third check named rather than pretending to pin.)
+
+Compiled: `cargo check --offline` passes.
+
 ### Remediation R26 — tests for the automation runners
 
 - **The recurring runner, the scheduler and the bulk actions have tests now.**
