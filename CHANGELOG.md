@@ -23,6 +23,30 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R28 — AI cost visibility: a running total, a cap, and a preview
+
+The plan's item 6, which the audit found entirely missing.
+
+- **A running monthly total.** Every run records its tokens against the month
+  (in the business time zone), and Settings → AI shows this month's tokens and
+  the estimated cost at a rate you set (US$ per 1,000 tokens). The rate is only
+  yours — nothing is sent anywhere to price it.
+- **An optional monthly cap, enforced.** Set a cap and Duly refuses further
+  cloud calls once the month's estimated spend reaches it, with a message
+  saying why and how to raise it. A cap of 0 means "no cap", not "refuse
+  everything". Local runs count toward the total too, so a mixed local/cloud
+  setup is honest about it.
+- **"Show what will be sent".** The AI invoice dialog has a preview that
+  builds the exact system and prompt a run would send — by the same functions
+  the run uses, so it cannot drift — and shows the model and image count.
+
+Tests (fail before, pass after): the preview builds the request without
+sending; a reached cap refuses the run with nothing sent; a run records its
+tokens and estimated spend against the month.
+
+Boundary, named: the cap estimates from a per-1,000-token rate you enter, not
+a per-model price list — Duly has no live pricing and will not invent one.
+
 ### Remediation R27 — certificate trust only for a local server
 
 - **The certificate-trust box no longer weakens verification for a remote

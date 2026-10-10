@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Trash2, Plus } from 'lucide-react';
 import { useAppStore, useActiveProfile } from '@/state/app';
-import { runAiTask } from '@/lib/ai';
+import { runAiTask, aiRequestPreview } from '@/lib/ai';
 import { invoiceEntryTask, type InvoiceEntryResult } from '@/lib/aiTasks';
 import { createDocument } from '@/core/documents';
 import { recalculateDocument } from '@/lib/documentService';
@@ -37,8 +37,13 @@ export function AiInvoiceDialog({ open, onClose }: { open: boolean; onClose: () 
   const [clientId, setClientId] = useState('');
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   const aiOff = settings?.aiEnabled === false;
+
+  // The plan's "show what will be sent": the exact system + prompt the run
+  // would send, built by the same functions, so it cannot drift.
+  const preview = settings ? aiRequestPreview(invoiceEntryTask, { instruction }, settings) : null;
 
   const run = async () => {
     if (!instruction.trim()) return;
@@ -170,8 +175,24 @@ export function AiInvoiceDialog({ open, onClose }: { open: boolean; onClose: () 
             >
               {running ? 'Reading…' : 'Draft'}
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowPreview((v) => !v)}
+              disabled={aiOff || !instruction.trim()}
+            >
+              {showPreview ? 'Hide request' : 'Show what will be sent'}
+            </Button>
           </div>
         </Field>
+
+        {showPreview && preview && (
+          <Alert tone="info" title="This is exactly what will be sent">
+            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[12px] text-ink-muted">
+              {`model: ${preview.model || '(the endpoint default)'}\nimages: ${preview.images}\n\n— system —\n${preview.system}\n\n— prompt —\n${preview.prompt}`}
+            </pre>
+          </Alert>
+        )}
 
         {error && (
           <Alert tone="error" title="Could not produce a draft">

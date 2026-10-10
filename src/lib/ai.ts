@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { Settings } from '@/core/schemas';
 import type { AiCompletionResult } from '@/adapters/types';
 import { newEntity } from '@/core/schemas/common';
+import { todayIn } from '@/core/validation/dates';
 import { platform, storage } from '@/adapters';
 
 /** Localhost origins a Local-only switch allows. */
@@ -82,6 +83,43 @@ export interface AiTask<T> {
   model?: (settings: Settings) => string;
 }
 
+/** The 'YYYY-MM' month a spend total covers, in the business time zone. */
+export function aiSpendMonth(today: string): string {
+  return today.slice(0, 7);
+}
+
+/** Estimated cost in US dollars for a number of tokens at a per-1,000 rate. */
+export function estimateAiCostUsd(tokens: number, per1kTokensUsd: number): number {
+  return (tokens / 1000) * per1kTokensUsd;
+}
+
+export interface AiRequestPreview {
+  feature: string;
+  model: string;
+  system: string;
+  prompt: string;
+  images: number;
+}
+
+/**
+ * What a run would send, without sending it — the plan's "show what will be
+ * sent". The prompt is built by the same function the run uses, so the preview
+ * cannot drift from the real request.
+ */
+export function aiRequestPreview<T>(
+  task: AiTask<T>,
+  args: Record<string, unknown>,
+  settings: Settings,
+): AiRequestPreview {
+  return {
+    feature: task.feature,
+    model: task.model?.(settings) || '',
+    system: task.system,
+    prompt: task.prompt(args),
+    images: (task.images?.(args) ?? []).length,
+  };
+}
+
 export interface AiRunResult<T> {
   ok: boolean;
   /** The validated value, when the run succeeded. */
@@ -104,6 +142,19 @@ export async function runAiTask<T>(
 
   const refused = aiGuard(settings, baseUrl);
   if (refused) return { ok: false, value: null, error: refused, tokens: 0 };
+
+  // The monthly spend cap, if one is set. It reads the total the last run
+  // recorded, so a cap of $0 is treated as "no cap" rather than "refuse all".
+  const month = aiSpendMonth(todayIn(settings.timeZone));
+  const spentThisMonth = settings.aiSpendPeriod === month ? settings.aiSpendUsd : 0;
+  if (settings.aiSpendCapEnabled && settings.aiSpendCapUsd > 0 && spentThisMonth >= settings.aiSpendCapUsd) {
+    return {
+      ok: false,
+      value: null,
+      error: `The AI spend cap for ${month} (US$${settings.aiSpendCapUsd.toFixed(2)}) has been reached. Raise it in Settings → AI, or wait until next month.`,
+      tokens: 0,
+    };
+  }
 
   if (options?.signal?.aborted) return { ok: false, value: null, error: 'Cancelled.', tokens: 0 };
 
@@ -143,7 +194,7 @@ export async function runAiTask<T>(
 
     try {
       const parsed = task.schema.parse(extractJson(result.content));
-      await logAiUsage(task.feature, tokens);
+      await recordAiUsage(task.feature, tokens, settings, month);
       return { ok: true, value: parsed, tokens };
     } catch (error) {
       validationError =
@@ -153,8 +204,39 @@ export async function runAiTask<T>(
     }
   }
 
-  await logAiUsage(task.feature, tokens);
+  await recordAiUsage(task.feature, tokens, settings, month);
   return { ok: false, value: null, error: `The reply could not be parsed: ${validationError}`, tokens };
+}
+
+/**
+ * Record tokens and estimated spend for the month, and log the tokens.
+ *
+ * The monthly total resets when the month changes; the cap reads it before a
+ * run. Written through the store so the settings screen's running total updates
+ * without a refresh — imported dynamically to avoid a module cycle.
+ */
+async function recordAiUsage(
+  feature: string,
+  tokens: number,
+  settings: Settings,
+  month: string,
+): Promise<void> {
+  if (tokens === 0) return;
+  const sameMonth = settings.aiSpendPeriod === month;
+  const next: Settings = {
+    ...settings,
+    aiSpendPeriod: month,
+    aiSpendUsd: (sameMonth ? settings.aiSpendUsd : 0) + estimateAiCostUsd(tokens, settings.aiCostPer1kTokensUsd),
+    aiSpendTokens: (sameMonth ? settings.aiSpendTokens : 0) + tokens,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    const { useAppStore } = await import('@/state/app');
+    await useAppStore.getState().saveSettings(next);
+  } catch {
+    await storage().saveSettings(next);
+  }
+  await logAiUsage(feature, tokens);
 }
 
 /** Token logging — the plan asks for it; cost has no known rate, so tokens it is. */

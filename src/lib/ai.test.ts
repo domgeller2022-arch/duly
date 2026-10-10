@@ -1,8 +1,9 @@
 import { describe, expect, it, beforeAll } from 'vitest';
-import { aiGuard, extractJson, redactForAi, runAiTask } from './ai';
+import { aiRequestPreview, aiGuard, extractJson, redactForAi, runAiTask } from './ai';
 import { invoiceEntryTask, invoiceEntrySchema } from './aiTasks';
 import { createWebPlatform, setPlatform } from '@/adapters';
 import { settingsSchema, type Settings } from '@/core/schemas';
+import { todayIn } from '@/core/validation/dates';
 import type { AiAdapter, AiCompletionRequest, AiCompletionResult } from '@/adapters/types';
 import { calculate } from '@/core/calc/calculate';
 
@@ -66,6 +67,18 @@ describe('redactForAi', () => {
     expect(out).toContain('[client]');
     expect(out).toContain('[amount]');
     expect(out).toContain('[ABN]');
+  });
+});
+
+describe('aiRequestPreview', () => {
+  it('builds the exact request without sending it', () => {
+    const settings = settingsWith({ aiTextModel: 'gpt-x' });
+    const preview = aiRequestPreview(invoiceEntryTask, { instruction: 'Bill Acme 3 days' }, settings);
+    expect(preview.feature).toBe(invoiceEntryTask.feature);
+    expect(preview.system).toContain('invoice lines');
+    expect(preview.prompt).toContain('Bill Acme 3 days');
+    expect(preview.model).toBe(invoiceEntryTask.model?.(settings) ?? '');
+    expect(preview.images).toBe(0);
   });
 });
 
@@ -158,6 +171,55 @@ describe('runAiTask — the acceptance: "Bill Acme 3 days consulting at $1,200/d
     expect(result.ok).toBe(true);
     // Before R18 this went out with no key at all, so every cloud run got a 401.
     expect(calls[0].request.apiKey).toBe('sk-stored');
+  });
+
+  it('refuses a run once the monthly cap is reached, without sending', async () => {
+    const platform = (await import('@/adapters')).platform();
+    const calls: { request: AiCompletionRequest }[] = [];
+    const original = platform.ai;
+    Object.defineProperty(platform, 'ai', { value: mockAdapter(REPLY, calls), configurable: true });
+
+    const timeZone = 'Australia/Sydney';
+    const month = todayIn(timeZone).slice(0, 7);
+    await platform.storage.saveSettings(
+      settingsWith({
+        aiEnabled: true,
+        aiLocalOnly: true,
+        timeZone,
+        aiSpendCapEnabled: true,
+        aiSpendCapUsd: 1,
+        aiSpendPeriod: month,
+        aiSpendUsd: 1,
+      }),
+    );
+
+    const result = await runAiTask(invoiceEntryTask, { instruction: 'Bill Acme' });
+    Object.defineProperty(platform, 'ai', { value: original, configurable: true });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/spend cap/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('records tokens and estimated spend for the month', async () => {
+    const platform = (await import('@/adapters')).platform();
+    const original = platform.ai;
+    Object.defineProperty(platform, 'ai', { value: mockAdapter(REPLY), configurable: true });
+
+    const timeZone = 'Australia/Sydney';
+    const month = todayIn(timeZone).slice(0, 7);
+    await platform.storage.saveSettings(
+      settingsWith({ aiEnabled: true, aiLocalOnly: true, timeZone, aiCostPer1kTokensUsd: 0.002 }),
+    );
+
+    const result = await runAiTask(invoiceEntryTask, { instruction: 'Bill Acme' });
+    Object.defineProperty(platform, 'ai', { value: original, configurable: true });
+
+    expect(result.ok).toBe(true);
+    const after = (await platform.storage.getSettings())!;
+    expect(after.aiSpendPeriod).toBe(month);
+    expect(after.aiSpendTokens).toBe(42);
+    expect(after.aiSpendUsd).toBeCloseTo(0.000084, 8); // 42 / 1000 × $0.002
   });
 
   it('the parsed result becomes a correct draft when calculated', async () => {

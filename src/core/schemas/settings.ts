@@ -135,6 +135,20 @@ export const settingsSchema = z.object({
   aiTextModel: z.string().default(''),
   aiVisionModel: z.string().default(''),
 
+  /* ---- ai cost visibility ---- */
+  /** Cap AI spend per calendar month. Off means no cap. */
+  aiSpendCapEnabled: z.boolean().default(false),
+  /** The monthly cap, in US dollars. */
+  aiSpendCapUsd: z.number().nonnegative().default(0),
+  /** Estimated cost, in US dollars per 1,000 tokens — used for the cap and the running total. */
+  aiCostPer1kTokensUsd: z.number().nonnegative().default(0),
+  /** The month the running total is for, 'YYYY-MM'. */
+  aiSpendPeriod: z.string().default(''),
+  /** AI spend recorded for the current month, in US dollars. */
+  aiSpendUsd: z.number().nonnegative().default(0),
+  /** Tokens used this month, for visibility. */
+  aiSpendTokens: z.number().int().nonnegative().default(0),
+
   /* ---- misc ---- */
   appLockEnabled: z.boolean().default(false),
   /** What submit does after finalising: nothing, a PDF download, or the mail app. */

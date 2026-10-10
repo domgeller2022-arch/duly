@@ -200,6 +200,45 @@ export function AiSection() {
         </div>
       </Panel>
 
+      <Panel title="Cost" description="A running total of this month's AI usage, and an optional cap.">
+        <div className="grid gap-3">
+          <p className="text-[13px] text-ink-muted">
+            This month: {settings.aiSpendTokens.toLocaleString()} tokens
+            {settings.aiCostPer1kTokensUsd > 0
+              ? `, US$${settings.aiSpendUsd.toFixed(2)} estimated`
+              : ' — set a rate to estimate the cost'}
+            .
+          </p>
+          <Field
+            label="Cost per 1,000 tokens (USD)"
+            hint="Your provider's price. Used only to estimate spend, never sent anywhere."
+          >
+            <TextInput
+              type="number"
+              value={String(settings.aiCostPer1kTokensUsd)}
+              onChange={(e) => void patch({ aiCostPer1kTokensUsd: Math.max(0, Number(e.target.value) || 0) })}
+              placeholder="0"
+            />
+          </Field>
+          <Switch
+            checked={settings.aiSpendCapEnabled}
+            onChange={(v) => void patch({ aiSpendCapEnabled: v })}
+            label="Cap monthly spend"
+            hint="Once this month's estimated spend reaches the cap, Duly refuses further cloud calls."
+          />
+          {settings.aiSpendCapEnabled && (
+            <Field label="Monthly cap (USD)">
+              <TextInput
+                type="number"
+                value={String(settings.aiSpendCapUsd)}
+                onChange={(e) => void patch({ aiSpendCapUsd: Math.max(0, Number(e.target.value) || 0) })}
+                placeholder="10"
+              />
+            </Field>
+          )}
+        </div>
+      </Panel>
+
       <Card className="p-4">
         <h2 className="mb-2 font-medium text-ink">What AI can and cannot do</h2>
         <ul className="space-y-1 text-[13px] text-ink-muted">
