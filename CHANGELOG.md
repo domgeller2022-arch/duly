@@ -23,6 +23,24 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R30 — desktop folder permissions (M21)
+
+- **A folder outside your home now works.** The static capability covered only
+  the home folders, so choosing an external drive or a network share left every
+  write refused. Picking a folder now grants the app the scope for exactly that
+  folder, at runtime, through a small Rust command, and the grant is re-applied
+  when the saved folder is restored at start-up (the `exists` check needs it
+  before anything else runs). The static scope no longer has to cover the whole
+  system to make an external drive work.
+- **The home-folder delete permission is gone.** `fs:allow-remove` was granted
+  over `$HOME/**`, and the only method that used it (`deleteFile`) has no
+  callers — so Duly could delete any file in your home folder for no reason at
+  all. The permission is dropped; writes never delete (they overwrite in place).
+
+Compiled: `cargo check --offline` passes. The runtime behaviour of the scope
+grant needs a packaged desktop build to confirm end-to-end, which this
+environment cannot produce.
+
 ### Remediation R29 — one bank line across several invoices
 
 The plan asked for a bank line to be splittable across invoices; the matcher

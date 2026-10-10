@@ -19,7 +19,23 @@
 
 import { exists, mkdir, readDir, readTextFile, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import type { FileAdapter, FileHandleRef } from '../types';
+
+/**
+ * Ask Rust to grant the fs scope for a folder the user picked.
+ *
+ * The static capability covers the home folders; a folder elsewhere — an
+ * external drive, a network share — is granted here, and must be granted
+ * *before* the first fs call (`exists` included) or the scope refuses it.
+ */
+async function grantFolderScope(path: string): Promise<void> {
+  try {
+    await invoke('allow_folder', { path });
+  } catch {
+    // Non-fatal: a folder already under the static scope needs no grant.
+  }
+}
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -89,11 +105,15 @@ export class DesktopFileAdapter implements FileAdapter {
   async chooseOutputFolder(): Promise<FileHandleRef | null> {
     const path = await openDialog({ directory: true, title: 'Choose the output folder' });
     if (!path || Array.isArray(path)) return null;
+    await grantFolderScope(path);
     this.outputFolder = path;
     return { token: path, name: baseName(path) };
   }
 
   async restoreFolder(ref: FileHandleRef): Promise<FileHandleRef | null> {
+    // Grant the scope first: `exists` is itself an fs call, and a restored
+    // folder on an external drive is outside the static capability.
+    await grantFolderScope(ref.token);
     // Permissions are implicit on desktop: restored whenever the folder still
     // exists — which is the whole point of persisting the path.
     if (!(await exists(ref.token))) return null;
@@ -183,11 +203,13 @@ export class DesktopFileAdapter implements FileAdapter {
   async chooseBackupFolder(): Promise<FileHandleRef | null> {
     const path = await openDialog({ directory: true, title: 'Choose the backup folder' });
     if (!path || Array.isArray(path)) return null;
+    await grantFolderScope(path);
     this.backupFolder = path;
     return { token: path, name: baseName(path) };
   }
 
   async restoreBackupFolder(ref: FileHandleRef): Promise<FileHandleRef | null> {
+    await grantFolderScope(ref.token);
     if (!(await exists(ref.token))) return null;
     this.backupFolder = ref.token;
     return ref;

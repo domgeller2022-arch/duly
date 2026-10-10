@@ -16,7 +16,6 @@
     "fs:allow-read-dir",
     "fs:allow-copy-file",
     "fs:allow-rename",
-    "fs:allow-remove",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",

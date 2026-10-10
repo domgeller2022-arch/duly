@@ -16,6 +16,7 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{Message, SmtpTransport, Transport};
 use serde::{Deserialize, Serialize};
+use tauri_plugin_fs::FsExt;
 
 /// Field names are camelCase on the wire, matching the TypeScript side.
 /// Tauri's camelCase handling covers command *parameters*, not nested
@@ -285,6 +286,18 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
 const SERVICE: &str = "com.duly.app";
 
+/// Grant read/write access to a folder the user picked at runtime.
+///
+/// The static capability scopes the home folders; a folder chosen elsewhere —
+/// an external drive, a network share — is granted here, so the static scope
+/// does not have to cover the whole system to make it work.
+#[tauri::command]
+fn allow_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.fs_scope()
+        .allow_directory(&path, true)
+        .map_err(|error| error.to_string())
+}
+
 /// Reveal a written file in the OS file manager — "open containing folder".
 #[tauri::command]
 fn reveal_in_folder(path: String) -> Result<(), String> {
@@ -357,7 +370,8 @@ pub fn run() {
             keychain_set,
             keychain_get,
             keychain_delete,
-            reveal_in_folder
+            reveal_in_folder,
+            allow_folder
         ])
         .setup(|app| {
             // Android has no tray; the param is only used by the desktop block.

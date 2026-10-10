@@ -27,6 +27,10 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   save: async () => null,
 }));
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: async () => undefined,
+}));
+
 import { DesktopFileAdapter } from './files';
 
 describe('DesktopFileAdapter.rewriteStoredFile', () => {
