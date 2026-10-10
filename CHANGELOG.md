@@ -23,6 +23,22 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R17 — the daily backup goes to the backup folder
+
+- **The daily backup no longer lands in the invoice folder.** The scheduler
+  wrote its snapshot through the output-folder writer, so once a day a full
+  copy of the database — clients, bank details, everything — was written among
+  the invoices the user shares with clients, and the backup folder they chose
+  was never written to at all. The file adapter has a `writeBackupFile` now: it
+  writes into the backup folder and refuses when there is none, rather than
+  falling back to the output folder. The backup folder is restored on boot
+  (desktop), and a web session's grant is reused when it survives, exactly as
+  the output folder is.
+
+Tests (fail before, pass after): a backup write lands in the backup folder and
+not the output folder; with no backup folder chosen it rejects rather than
+writing among the invoices.
+
 ### Remediation R16 — "today" is the business's day, and the right business
 
 - **"Today" comes from the business time zone, not UTC.** The scheduler's

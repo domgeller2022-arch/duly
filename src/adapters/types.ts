@@ -348,6 +348,10 @@ export interface FileAdapter {
 
   /** Set the folder where daily database backups are copied. */
   chooseBackupFolder(): Promise<FileHandleRef | null>;
+  /** Re-use a previously chosen backup folder, or null if it is unavailable. */
+  restoreBackupFolder(ref: FileHandleRef): Promise<FileHandleRef | null>;
+  /** Write a file into the chosen backup folder — never into the output folder. */
+  writeBackupFile(relativePath: string, data: Blob | string): Promise<string>;
 }
 
 /* ------------------------------------------------------------------ */

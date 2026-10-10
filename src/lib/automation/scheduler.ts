@@ -95,7 +95,13 @@ export async function runSchedulerPass(now: string): Promise<SchedulerRunResult>
         if (settings.backupFolderName) {
           try {
             const snapshot = await storage().exportSnapshot();
-            await platform().files.writeFile(`duly-backup-${todayKey}.json`, JSON.stringify(snapshot, null, 2));
+            // The backup folder, not the output folder: a snapshot holds the
+            // whole database (clients, bank details) and must never land among
+            // the invoices the user shares.
+            await platform().files.writeBackupFile(
+              `duly-backup-${todayKey}.json`,
+              JSON.stringify(snapshot, null, 2),
+            );
             await log({
               category: 'backup',
               message: `Daily backup written (${(info.sizeBytes / 1024).toFixed(0)} kB) to ${settings.backupFolderName}.`,

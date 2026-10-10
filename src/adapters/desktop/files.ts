@@ -63,6 +63,7 @@ export class DesktopFileAdapter implements FileAdapter {
   readonly name = 'desktop-native-fs';
 
   private outputFolder: string | null = null;
+  private backupFolder: string | null = null;
 
   get supportsFolderAccess(): boolean {
     return true;
@@ -150,6 +151,22 @@ export class DesktopFileAdapter implements FileAdapter {
   async chooseBackupFolder(): Promise<FileHandleRef | null> {
     const path = await openDialog({ directory: true, title: 'Choose the backup folder' });
     if (!path || Array.isArray(path)) return null;
+    this.backupFolder = path;
     return { token: path, name: baseName(path) };
+  }
+
+  async restoreBackupFolder(ref: FileHandleRef): Promise<FileHandleRef | null> {
+    if (!(await exists(ref.token))) return null;
+    this.backupFolder = ref.token;
+    return ref;
+  }
+
+  /** Write into the chosen backup folder — never among the invoices. */
+  async writeBackupFile(relativePath: string, data: Blob | string): Promise<string> {
+    const folder = this.backupFolder;
+    if (!folder) throw new Error('Choose a backup folder first — the setting remembers it.');
+    const path = resolvePath(folder, relativePath);
+    await writeAbs(path, data);
+    return path;
   }
 }

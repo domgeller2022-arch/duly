@@ -168,6 +168,14 @@ export function installPlatform(): void {
         if (settings?.outputFolderHandle) {
           await platform().files.restoreFolder({ token: settings.outputFolderHandle, name: settings.outputFolderName });
         }
+        // The backup folder is restored the same way, so daily backups keep
+        // writing to their own folder after a restart.
+        if (settings?.backupFolderHandle) {
+          await platform().files.restoreBackupFolder({
+            token: settings.backupFolderHandle,
+            name: settings.backupFolderName,
+          });
+        }
       } catch {
         // A failed restore is not fatal: the next write re-asks via
         // requestPermission, which re-opens the picker.

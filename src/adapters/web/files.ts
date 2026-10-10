@@ -97,6 +97,20 @@ export class WebFileAdapter implements FileAdapter {
   }
 
   /**
+   * Reuse a backup folder chosen earlier this session.
+   *
+   * A web directory handle cannot be revived from a string, so a grant from a
+   * previous session is gone; the caller re-chooses. Best-effort, like every
+   * web folder path.
+   */
+  async restoreBackupFolder(ref: FileHandleRef): Promise<FileHandleRef | null> {
+    const handle = granted.get(ref.token);
+    if (!handle) return null;
+    this.backupFolder = handle;
+    return ref;
+  }
+
+  /**
    * Restore a previously chosen folder.
    *
    * A directory handle cannot be revived from a string, so the only honest
@@ -146,7 +160,29 @@ export class WebFileAdapter implements FileAdapter {
   ): Promise<string> {
     const root = this.outputFolder;
     if (!root) throw new NoOutputFolderError();
+    return this.writeInto(root, relativePath, data, options);
+  }
 
+  /**
+   * Write into the chosen backup folder.
+   *
+   * The daily backup used to go through `writeFile`, so a full copy of the
+   * database — clients, bank details, everything — landed in the invoices
+   * folder the user shares with clients. Backups go to their own folder, and
+   * never prompt (there is no UI mid-backup; the name is dated).
+   */
+  async writeBackupFile(relativePath: string, data: Blob | string): Promise<string> {
+    const root = this.backupFolder;
+    if (!root) throw new NoBackupFolderError();
+    return this.writeInto(root, relativePath, data, { confirmOverwrite: false });
+  }
+
+  private async writeInto(
+    root: FileSystemDirectoryHandle,
+    relativePath: string,
+    data: Blob | string,
+    options: WriteFileOptions,
+  ): Promise<string> {
     const { createDirectories = true, confirmOverwrite = true } = options;
     const parts = splitPath(relativePath);
     const fileName = parts.pop();
@@ -276,6 +312,13 @@ export class NoOutputFolderError extends Error {
   constructor() {
     super('No output folder has been chosen yet');
     this.name = 'NoOutputFolderError';
+  }
+}
+
+export class NoBackupFolderError extends Error {
+  constructor() {
+    super('No backup folder has been chosen yet');
+    this.name = 'NoBackupFolderError';
   }
 }
 
