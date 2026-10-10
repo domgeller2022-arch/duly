@@ -785,6 +785,15 @@ function DocumentRow({
         <Chip tone={descriptor.tone} title={descriptor.hint}>
           {descriptor.label}
         </Chip>
+        {doc.submissionIssues.length > 0 && (
+          <Chip
+            tone="overdue"
+            className="ml-1"
+            title={`Submitted with issues:\n- ${doc.submissionIssues.map((i) => i.title).join('\n- ')}`}
+          >
+            Submitted with issues
+          </Chip>
+        )}
         {doc.reviewRequired && doc.status === 'draft' && (
           <Chip tone="accent" className="ml-1">
             Review

@@ -16,6 +16,7 @@ import { Check, Mail, X } from 'lucide-react';
 import { useAppStore } from '@/state/app';
 import { platform, storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
+import { emailBlockedReason } from '@/core/documents';
 import { Button, Card, Chip, EmptyState, Panel, Table, Td, Th, useToast } from '@/ui/components/base';
 import { PageHeader } from '@/ui/components/layout';
 import { date, money, relative } from '@/ui/lib/format';
@@ -59,6 +60,11 @@ export function RemindersScreen() {
     const reminder = reminders.find((r) => r.id === reminderId);
     if (!reminder) return;
     const document = documents.find((d) => d.id === reminder.documentId);
+    const blocked = document ? emailBlockedReason(document) : null;
+    if (blocked) {
+      push({ tone: 'error', title: 'Email is blocked', description: blocked });
+      return;
+    }
     const client = clients.find((c) => c.id === document?.clientId) ?? null;
     // Everyone flagged to receive this client's invoices — the client's own
     // address plus its invoice contacts — not just the main line.
@@ -142,6 +148,12 @@ export function RemindersScreen() {
   const sendReady = async (entryId: string) => {
     const entry = outbox.find((o) => o.id === entryId);
     if (!entry) return;
+    const entryDocument = documents.find((d) => d.id === entry.documentId);
+    const blocked = entryDocument ? emailBlockedReason(entryDocument) : null;
+    if (blocked) {
+      push({ tone: 'error', title: 'Email is blocked', description: blocked });
+      return;
+    }
     const sendingProfile = useAppStore.getState().profiles.find(
       (p) => p.id === (documents.find((d) => d.id === entry.documentId)?.profileId),
     );

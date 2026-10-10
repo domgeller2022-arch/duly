@@ -830,6 +830,19 @@ export function isOpenDocument(document: Document): boolean {
   return OPEN_STATUSES.includes(document.status);
 }
 
+/**
+ * Why email from Duly is refused for this document, or null when it is allowed.
+ *
+ * A document submitted with issues is not a valid tax invoice, and sending it
+ * from Duly would broadcast that. Email is blocked everywhere — the Email
+ * button, scheduled sends, reminders and bulk actions — while manual export
+ * still works, because the user may need to send it by hand.
+ */
+export function emailBlockedReason(document: Document): string | null {
+  if (document.submissionIssues.length === 0) return null;
+  return 'This invoice was submitted with issues, so it may not be a valid tax invoice. Duly will not email it — use Export to send it by hand.';
+}
+
 /* ------------------------------------------------------------------ */
 /* Headings                                                            */
 /* ------------------------------------------------------------------ */

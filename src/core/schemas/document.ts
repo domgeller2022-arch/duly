@@ -269,6 +269,13 @@ export const documentSchema = z.object({
    * by the next save — or by the scheduler's 15-minute pass over open drafts.
    */
   appliedRuleIds: z.array(z.string()).default([]),
+  /**
+   * The compliance checks an invoice was submitted with, when the user chose to
+   * submit anyway. The checks themselves, not a flag. A non-empty list blocks
+   * email from Duly and auto-filing/Drive upload, and shows as "Submitted with
+   * issues" in the list. The PDF never mentions them.
+   */
+  submissionIssues: z.array(z.object({ id: z.string(), title: z.string() })).default([]),
 
   finalisedAt: isoDateTime.nullable().default(null),
   voidedAt: isoDateTime.nullable().default(null),

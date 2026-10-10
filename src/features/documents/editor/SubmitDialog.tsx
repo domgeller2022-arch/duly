@@ -53,11 +53,18 @@ export function SubmitDialog({
 
   const [emailNow, setEmailNow] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmIssues, setConfirmIssues] = useState(false);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
 
   const counts = countBySeverity(compliance);
   const blocking = counts.block > 0;
+  const blockingChecks = useMemo(() => compliance.filter((c) => c.severity === 'block'), [compliance]);
+  // "No line items" is the one issue that always stops a submit: an invoice with
+  // nothing on it is never what anyone means to submit. Every other block can be
+  // overridden behind a confirm that names the consequence.
+  const hardBlocked = lines.length === 0 || blockingChecks.some((c) => c.id === 'no-lines');
+  const canOverride = blocking && !hardBlocked;
 
   const client = useMemo(
     () => clients.find((c) => c.id === document?.clientId) ?? null,
@@ -110,10 +117,11 @@ export function SubmitDialog({
 
   /* ---------------------------------------------------------------- */
 
-  const submit = async () => {
+  const submit = async (withIssues = false) => {
     if (!document || !profile || !result || !settings) return;
     setSubmitting(true);
     setPathError(null);
+    setConfirmIssues(false);
 
     try {
       const outcome = await finaliseDocument({
@@ -127,6 +135,9 @@ export function SubmitDialog({
         template:
           useAppStore.getState().designTemplates.find((t) => t.id === document.designTemplateId) ?? null,
         settings,
+        // Submitting with issues stores the checks and skips auto-filing and
+        // the Drive upload; the number is still spent as normal.
+        issues: withIssues ? blockingChecks.map((c) => ({ id: c.id, title: c.title })) : [],
       });
 
       await refreshDocuments();
@@ -138,10 +149,14 @@ export function SubmitDialog({
 
       push({
         tone: outcome.pdfError ? 'warning' : 'success',
-        title: `${outcome.number} submitted`,
-        description: outcome.pdfPath
-          ? `Written to ${outcome.pdfPath}`
-          : 'No PDF was written — export it whenever you like.',
+        title: withIssues
+          ? `${outcome.number} submitted with issues`
+          : `${outcome.number} submitted`,
+        description: withIssues
+          ? 'Stored with the issues on record. It was not auto-filed or uploaded to Drive, and Duly will not email it.'
+          : outcome.pdfPath
+            ? `Written to ${outcome.pdfPath}`
+            : 'No PDF was written — export it whenever you like.',
       });
 
       // What submit does next: the setting decides. The default is nothing —
@@ -169,7 +184,7 @@ export function SubmitDialog({
           });
         }
       }
-      if (settings.onSubmitAction === 'open_email') {
+      if (!withIssues && settings.onSubmitAction === 'open_email') {
         // The finalised PDF rides along: on desktop it is the SMTP
         // attachment; on the web it is saved next to the message so the
         // user attaches it in one motion. A failure to render it does not
@@ -225,25 +240,65 @@ export function SubmitDialog({
           <Button onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => void submit()}
-            loading={submitting}
-            disabled={blocking || !document || lines.length === 0}
-            icon={
-              blocking ? (
-                <AlertTriangle className="size-3.5" aria-hidden />
-              ) : (
-                <FileCheck2 className="size-3.5" aria-hidden />
-              )
-            }
-          >
-            {blocking ? 'Fix the issues first' : `Submit as ${nextNumber}`}
-          </Button>
+          {hardBlocked ? (
+            <Button
+              variant="primary"
+              disabled
+              icon={<AlertTriangle className="size-3.5" aria-hidden />}
+              title="An invoice with no line items cannot be submitted."
+            >
+              Fix the issues first
+            </Button>
+          ) : canOverride ? (
+            <Button
+              variant="primary"
+              onClick={() => setConfirmIssues(true)}
+              disabled={submitting}
+              icon={<AlertTriangle className="size-3.5" aria-hidden />}
+            >
+              Submit with issues
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => void submit(false)}
+              loading={submitting}
+              disabled={!document || lines.length === 0}
+              icon={<FileCheck2 className="size-3.5" aria-hidden />}
+            >
+              Submit as {nextNumber}
+            </Button>
+          )}
         </>
       }
     >
       <div className="space-y-4">
+        {confirmIssues && (
+          <Alert tone="error" title="Submit with issues?">
+            <div className="space-y-2">
+              <p>This document is not a valid tax invoice. The issues:</p>
+              <ul className="list-disc pl-5">
+                {blockingChecks.map((c) => (
+                  <li key={c.id}>{c.title}</li>
+                ))}
+              </ul>
+              <p>
+                Submitting spends its number for good, and it will not be auto-filed or uploaded to
+                Drive. Your client may not be able to claim the GST. If it turns out wrong, the way
+                back is a credit note and a corrected invoice.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button size="sm" onClick={() => setConfirmIssues(false)} disabled={submitting}>
+                  Go back
+                </Button>
+                <Button size="sm" variant="primary" onClick={() => void submit(true)} loading={submitting}>
+                  Submit anyway
+                </Button>
+              </div>
+            </div>
+          </Alert>
+        )}
+
         {/* ---- what is about to happen ---- */}
         <div className="grid grid-cols-1 gap-3 rounded-[8px] border border-rule bg-paper-sunken/50 p-3 sm:grid-cols-2">
           <div>

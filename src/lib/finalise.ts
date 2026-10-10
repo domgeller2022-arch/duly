@@ -47,6 +47,11 @@ export interface FinaliseInput {
   pattern?: string;
   /** Skip the PDF, for a bulk run that writes files itself. */
   writePdf?: boolean;
+  /**
+   * The blocking checks the user chose to submit with. Stored on the document,
+   * and blocks auto-filing, the Drive upload and email from Duly.
+   */
+  issues?: { id: string; title: string }[];
 }
 
 export interface FinaliseResult {
@@ -77,6 +82,9 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
   const now = new Date().toISOString();
   const pattern = patternFor(document.type, input.pattern);
   const clientCode = clientCodeFor(client);
+  // Submitting with issues skips the two things that would broadcast an invalid
+  // tax invoice: auto-filing the PDF and uploading it to Drive.
+  const submittedWithIssues = (input.issues?.length ?? 0) > 0;
 
   // 1. Reserve the number. Once reserved, never reused — so a failure after this
   //    point costs a gap in the sequence, never a duplicate.
@@ -119,6 +127,7 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
       status: 'finalised',
       finalisedAt: now,
       taxSnapshot: snapshot,
+      submissionIssues: input.issues ?? [],
     },
     result,
   );
@@ -131,7 +140,7 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
   let pdfPath: string | null = null;
   let pdfError: string | null = null;
 
-  if (input.writePdf !== false && (settings.autoFileOnSubmit && settings.outputFolderName)) {
+  if (input.writePdf !== false && !submittedWithIssues && (settings.autoFileOnSubmit && settings.outputFolderName)) {
     try {
       const model = buildDocumentModel({
         qrSrc: await paymentQrSrc(
@@ -201,7 +210,7 @@ export async function finaliseDocument(input: FinaliseInput): Promise<FinaliseRe
   // 4b. Cloud sync: the same document uploaded to the user's Google Drive, so
   //     the invoices do not live on one device alone. A failure here never
   //     blocks the submit; the automation log records what happened.
-  if (input.writePdf !== false && settings.cloudSyncOnSubmit && settings.cloudClientId) {
+  if (input.writePdf !== false && !submittedWithIssues && settings.cloudSyncOnSubmit && settings.cloudClientId) {
     const cloudFileName = outputPathFor(settings, finalised, client, reserved.number, profile);
     try {
       const model = buildDocumentModel({

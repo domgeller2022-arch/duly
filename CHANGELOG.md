@@ -23,6 +23,36 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R23 — "Submit with issues"
+
+The feature from the re-audit's spec, built on request. An invoice that fails
+the ATO's tax-invoice rules is not a valid tax invoice — the client may not be
+able to claim the GST, and the number is spent for good — so this is
+deliberately awkward, not a one-click bypass.
+
+- **The Submit dialog offers it, behind a confirm.** When blocking checks
+  exist, the primary button becomes "Submit with issues"; clicking it reveals a
+  red confirm that lists the checks and names the consequence: the number is
+  spent, it will not be auto-filed or uploaded to Drive, your client may not be
+  able to claim the GST, and the way back is a credit note and a corrected
+  invoice. "No line items" stays a hard block — an invoice with nothing on it
+  is never what anyone means to submit.
+- **The document is numbered and finalised as usual**, and stores the checks it
+  was submitted with (`submissionIssues`: each check's id and title, not just a
+  flag).
+- **The list shows a red "Submitted with issues" chip**, whose tooltip lists
+  the checks. The PDF never mentions them.
+- **Not auto-filed and not uploaded to Drive**, while manual Export (PDF, CSV
+  and the rest) works exactly as for any other invoice.
+- **Email from Duly is blocked everywhere** — the Email button, scheduled
+  sends and payment reminders — with a message saying why and pointing at
+  Export. Bulk finalise already skips documents with blocking issues, so it
+  cannot be used to skip the confirm.
+
+Tests (fail before, pass after): a document finalised with issues stores them,
+keeps its number, and is not auto-filed even with auto-file on and a folder
+set; `emailBlockedReason` refuses it and allows a normal document.
+
 ### Remediation R22 — the smaller leftovers
 
 - **Desktop bulk "Re-file PDFs" writes to the right path.** A stored
@@ -757,7 +787,7 @@ where the behaviour is testable. Still open, named rather than silent:
 - the Xero/MYOB remainder and its one real import (M10);
 - the Android keychain backend (M23, unchanged and still documented);
 - the "Submit with issues" feature — a product decision with a tax
-  consequence, deliberately not built without the user asking for it.
+  consequence, built on request as R23 at the top of this file.
 
 
 ### Phase 5 — PDF renderer and template studio: complete

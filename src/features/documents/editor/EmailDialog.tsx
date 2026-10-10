@@ -17,6 +17,7 @@ import { useEditorStore } from './editorStore';
 import { platform, files, storage } from '@/adapters';
 import { tableBlob, renderBundlePdf, documentTableExport, type ExportFormat } from '@/lib/exports';
 import { recalculateDocument } from '@/lib/documentService';
+import { emailBlockedReason } from '@/core/documents';
 import { interpolate, MERGE_FIELDS, buildMergeValues } from '@/core/engines/merge';
 import { runAiTask } from '@/lib/ai';
 import { emailDraftTask } from '@/lib/aiTasks';
@@ -101,6 +102,10 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
   }, [open, document, client, emailTemplates, mergeValues]);
 
   if (!document || !result) return null;
+
+  // A document submitted with issues is not a valid tax invoice; Duly refuses
+  // to email it (manual download/export still works).
+  const emailBlock = emailBlockedReason(document);
 
   /** Insert a merge field at the end of the body. */
   const insertField = (key: string) => setBody(`${body}${key}`);
@@ -200,6 +205,10 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
   /** Queue the send for a chosen date: the scheduler moves it to ready, Reminders approves it. */
   const scheduleSend = async () => {
     if (!scheduledFor) return;
+    if (emailBlock) {
+      push({ tone: 'error', title: 'Email is blocked', description: emailBlock });
+      return;
+    }
     try {
       // Render the invoice now and keep it with the queued send: the outbox
       // used to queue with no attachment, and the scheduler that delivers it
@@ -265,6 +274,10 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
   };
 
   const openMailApp = async () => {
+    if (emailBlock) {
+      push({ tone: 'error', title: 'Email is blocked', description: emailBlock });
+      return;
+    }
     setSending(true);
     try {
       const recipients = to
@@ -326,6 +339,11 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
   return (
     <Dialog open={open} onClose={onClose} title={`Email ${document.number || 'draft'}`} size="lg">
       <div className="grid gap-4">
+        {emailBlock && (
+          <Alert tone="error" title="Email is blocked for this invoice">
+            {emailBlock}
+          </Alert>
+        )}
         <Field label="To" hint="Comma-separate multiple recipients.">
           <TextInput
             type="email"
@@ -401,7 +419,7 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
             variant="primary"
             icon={<Mail className="size-3.5" aria-hidden />}
             onClick={() => void openMailApp()}
-            disabled={sending || !to.trim()}
+            disabled={sending || !to.trim() || emailBlock !== null}
           >
             Open mail app
           </Button>
@@ -411,7 +429,7 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
           <Field label="Or schedule this send" inline>
             <TextInput type="date" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
           </Field>
-          <Button size="sm" onClick={() => void scheduleSend()} disabled={!scheduledFor}>
+          <Button size="sm" onClick={() => void scheduleSend()} disabled={!scheduledFor || emailBlock !== null}>
             Queue scheduled send
           </Button>
           <p className="w-full text-[12px] text-ink-muted">
