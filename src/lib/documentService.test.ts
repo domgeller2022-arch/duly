@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWebPlatform, setPlatform } from '@/adapters';
 import { storage } from '@/adapters/types';
 import { recalculateDocument, taxCodesFor } from './documentService';
@@ -133,6 +133,49 @@ describe('recalculateDocument', () => {
     const gst = codes.find((c) => c.id === 'tax_gst')!;
     expect(taxCodesFor({ ...DRAFT, status: 'draft' } as never, codes)).toBe(codes);
     void gst;
+  });
+
+  it('takes "today" from the business time zone, not UTC, when deriving status', async () => {
+    const db = await freshStorage();
+    const profile = newBusinessProfile({ name: 'Acme', gstRegistered: true });
+    const client = newClient({ displayName: 'Client Co' });
+    await db.saveBusinessProfile(profile);
+    await db.saveClient(client);
+
+    const document = documentSchema.parse({
+      ...newEntity({}),
+      type: 'invoice',
+      profileId: profile.id,
+      clientId: client.id,
+      status: 'finalised',
+      number: 'INV-2026-0001',
+      currency: 'AUD',
+      taxMode: 'exclusive',
+      taxCodeId: 'tax_gst',
+      issueDate: '2026-01-02',
+      dueDate: '2026-02-01',
+    });
+    const line = documentLineSchema.parse({
+      ...newEntity({}),
+      documentId: document.id,
+      type: 'item',
+      description: 'Consulting',
+      quantity: '1',
+      unitPrice: 100000,
+      taxCodeId: 'tax_gst',
+    });
+    await db.saveDocument(document, [line]);
+
+    // 20:00 UTC on 1 February is 07:00 on 2 February in Sydney, so the invoice
+    // is a day overdue there while UTC still calls it due today.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-02-01T20:00:00.000Z'));
+    try {
+      const outcome = await recalculateDocument({ document });
+      expect(outcome.document.status).toBe('overdue');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

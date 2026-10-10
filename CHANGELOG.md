@@ -19,8 +19,29 @@ app for macOS and Windows, and the Android build. Newest first.
 An independent re-audit of R1–R10 (10 Oct) found 36 of 52 findings fixed, 13
 partial and 3 not fixed, plus new problems the fixes introduced, and named
 three changelog claims the code did not back up. R12–R23 below are the second
-remediation round: they close the re-audit's findings in the order it asked
-for, each with a test that fails before the fix.
+remediation round: they close the re-audit's findings roughly in the order it
+asked for, each with a test that fails before the fix where the behaviour is
+testable at all.
+
+### Remediation R16 — "today" is the business's day, and the right business
+
+- **"Today" comes from the business time zone, not UTC.** The scheduler's
+  visibility pass and the payment/status recalculation took the date from
+  `new Date().toISOString().slice(0, 10)`, which is UTC — in Sydney that is
+  still yesterday until about 10 or 11 am, so for the first hours of every
+  morning an overdue flag, a recurring draft or a status change ran a day
+  late. Both read the date in the settings' time zone now (`todayIn`), as the
+  app store and the GST switch already did.
+- **Reports and accountant exports follow the business you selected**, not the
+  first one in the list. R9 scoped them to a business but to `profiles[0]`;
+  with more than one business, the reports and the Xero/MYOB files described a
+  different business from the one in the switcher. The active business governs
+  now, in the Reports screen and in the accountant export panel.
+
+Tests (fail before, pass after): a status derivation at 20:00 UTC on
+1 February reads 2 February in Sydney and marks a 1 February invoice overdue —
+`finalised` under UTC. The report/export scope is derived state in a
+component, verified by inspection and typecheck.
 
 ### Remediation R15 — credit is reserved while drafts are open
 

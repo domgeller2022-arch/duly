@@ -21,6 +21,7 @@ import { applyTotals, calculate, type CalculationResult } from '@/core/calc/calc
 import { deriveDocumentStatus } from '@/core/documents';
 import type { Document, DocumentLine, Payment } from '@/core/schemas';
 import type { TaxCode } from '@/core/tax/tax';
+import { todayIn } from '@/core/validation/dates';
 import { storage } from '@/adapters';
 
 /**
@@ -115,7 +116,9 @@ export async function recalculateDocument(args: RecalculateArgs): Promise<{
 
   let next: Document = applyTotals({ ...document }, result);
   if (args.deriveStatus !== false) {
-    const today = args.today ?? new Date().toISOString().slice(0, 10);
+    // The business time zone's date, not UTC: a status derived at 9am in Sydney
+    // from a UTC date is still yesterday's.
+    const today = args.today ?? todayIn(settings?.timeZone ?? 'Australia/Sydney');
     next = {
       ...next,
       status: deriveDocumentStatus({ document: next, balance: result.balance, today }),

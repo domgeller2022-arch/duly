@@ -65,11 +65,15 @@ export function ReportsScreen() {
   const payments = useAppStore((s) => s.payments);
   const clients = useAppStore((s) => s.clients);
   const profiles = useAppStore((s) => s.profiles);
+  const activeProfileId = useAppStore((s) => s.activeProfileId);
   const settings = useAppStore((s) => s.settings);
   const today = useAppStore((s) => s.today);
   const [report, setReport] = useState<Report>('aged');
 
-  const currency = profiles[0]?.defaultCurrency ?? settings?.defaultCurrency ?? 'AUD';
+  // The business selected in the switcher, not the first one in the list:
+  // summing (or scoping to) the wrong business is a silently wrong report.
+  const profile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+  const currency = profile?.defaultCurrency ?? settings?.defaultCurrency ?? 'AUD';
   const symbol = currency === 'AUD' || currency === 'NZD' || currency === 'USD' ? '$' : currency;
 
   /**
@@ -83,10 +87,10 @@ export function ReportsScreen() {
           d.type === 'invoice' &&
           d.status !== 'draft' &&
           d.status !== 'void' &&
-          d.profileId === profiles[0]?.id &&
+          d.profileId === profile?.id &&
           d.currency === currency,
       ),
-    [documents, profiles, currency],
+    [documents, profile?.id, currency],
   );
 
   /** Issued credit notes, scoped the same way: money coming back off. */
@@ -97,10 +101,10 @@ export function ReportsScreen() {
           d.type === 'credit_note' &&
           d.status !== 'draft' &&
           d.status !== 'void' &&
-          d.profileId === profiles[0]?.id &&
+          d.profileId === profile?.id &&
           d.currency === currency,
       ),
-    [documents, profiles, currency],
+    [documents, profile?.id, currency],
   );
 
   /* ---- aged receivables, per client ---- */

@@ -345,7 +345,9 @@ function AccountantExportPanel() {
       // Scoped to the active business, and calculated through the same
       // service everything else uses — the accountant gets the frozen tax
       // codes an issued document carries, and per-line figures.
-      const activeProfile = useAppStore.getState().profiles[0];
+      const state = useAppStore.getState();
+      const activeProfile =
+        state.profiles.find((p) => p.id === state.activeProfileId) ?? state.profiles[0];
       const taxCodes = await storage().listTaxCodes();
       const invoiceBundles = await Promise.all(
         documents

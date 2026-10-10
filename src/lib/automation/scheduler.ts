@@ -12,6 +12,7 @@
 
 import type { AutomationLogEntry } from '@/core/schemas/automation';
 import { newEntity } from '@/core/schemas/common';
+import { todayIn } from '@/core/validation/dates';
 import { platform, storage } from '@/adapters';
 import { useAppStore } from '@/state/app';
 import { runRecurringSchedules } from './recurring';
@@ -289,8 +290,9 @@ export async function startScheduler(): Promise<void> {
     try {
       // A fresh date every pass: the store's today is set at boot, so an app
       // left open overnight (or in the tray) used to keep running yesterday's
-      // overdue and recurring checks until a reload.
-      const result = await runSchedulerPass(new Date().toISOString().slice(0, 10));
+      // overdue and recurring checks until a reload. The date is the business
+      // time zone's, not UTC — in Sydney UTC is still yesterday until mid-morning.
+      const result = await runSchedulerPass(todayIn(settings.timeZone));
       if (result.documentsCreated > 0 || result.remindersQueued > 0) {
         await useAppStore.getState().refresh();
       }
