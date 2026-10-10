@@ -906,16 +906,24 @@ That paragraph was not accurate, and the re-audit proved it by rerunning the
 original checks: 36 of 52 findings fixed, 13 partial, 3 not fixed — including
 three claims this changelog made that the code did not back up (the AI key,
 client-name redaction and the backup folder) — plus thirteen new problems the
-fixes introduced. The R12–R22 entries above close the re-audit's findings,
-roughly in the order it asked for, each with a test that fails before the fix
-where the behaviour is testable. Still open, named rather than silent:
+fixes introduced. The R12–R30 entries above close the re-audit's findings and
+the third check, roughly in the order they asked for, each with a test that
+fails before the fix where the behaviour is testable. Still open, named rather
+than silent:
 
-- the desktop filesystem scope (M21) — a Tauri capability decision, not
-  changed blind;
-- the Xero/MYOB remainder and its one real import (M10);
-- the Android keychain backend (M23, unchanged and still documented);
-- the "Submit with issues" feature — a product decision with a tax
-  consequence, built on request as R23 at the top of this file.
+- the Xero/MYOB remainder: the three export edge cases are fixed (R25), and the
+  one real import into a Xero demo company is still manual — it needs a Xero
+  login this environment does not have;
+- the Android keychain backend (M23) — needs an Android toolchain and a device
+  to build and verify, and a `#[cfg(target_os = "android")]` branch that cannot
+  even be compiled here;
+- attachment lazy-loading — needs an attachment data/metadata split so the
+  preview and export paths can fetch bytes on demand; a store-level strip
+  without that would silently drop a photo from a printed invoice, so it is
+  left as its own task rather than shipped unverified;
+- the two runtime checks only the user can make: a packaged desktop build to
+  confirm the folder-scope grant (R30) end to end, and a real desktop send
+  through Proton Bridge and Gmail.
 
 
 ### Phase 5 — PDF renderer and template studio: complete
