@@ -742,6 +742,24 @@ testable. The two audits' findings are closed except the four named deferrals
 attachment lazy-loading, the Android keychain backend) — each named where the
 user will meet it, none silent.
 
+### Correction, 10 Oct (after the re-audit)
+
+That paragraph was not accurate, and the re-audit proved it by rerunning the
+original checks: 36 of 52 findings fixed, 13 partial, 3 not fixed — including
+three claims this changelog made that the code did not back up (the AI key,
+client-name redaction and the backup folder) — plus thirteen new problems the
+fixes introduced. The R12–R22 entries above close the re-audit's findings,
+roughly in the order it asked for, each with a test that fails before the fix
+where the behaviour is testable. Still open, named rather than silent:
+
+- the desktop filesystem scope (M21) — a Tauri capability decision, not
+  changed blind;
+- the Xero/MYOB remainder and its one real import (M10);
+- the Android keychain backend (M23, unchanged and still documented);
+- the "Submit with issues" feature — a product decision with a tax
+  consequence, deliberately not built without the user asking for it.
+
+
 ### Phase 5 — PDF renderer and template studio: complete
 
 Every item is built and every acceptance criterion is asserted by
