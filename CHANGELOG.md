@@ -22,6 +22,24 @@ three changelog claims the code did not back up. R12–R23 below are the second
 remediation round: they close the re-audit's findings in the order it asked
 for, each with a test that fails before the fix.
 
+### Remediation R15 — credit is reserved while drafts are open
+
+- **Two drafts can no longer spend the same client credit.** Credit was applied
+  only when chosen and spent at finalise (R3), but nothing reserved it while
+  drafts were open: two drafts for the same client could each apply the same
+  $50, and both finalised at $50 off when only $50 existed — the second drew on
+  credit that was already gone. The editor now subtracts the credit already
+  applied on the client's *other* open drafts from what it offers, so the
+  second draft offers none. The figure is re-read on load and whenever the
+  client changes.
+
+Boundary, named: this stops a new double-application. A pair of drafts that
+already had the credit applied before this fix keep their stored figures; a
+ledger cannot un-apply credit that was never really there.
+
+Tests (fail before, pass after): with draft A holding the client's whole $50,
+opening draft B offers $0.
+
 ### Remediation R14 — the editor shows what is stored
 
 The editor's `load` called `calculate()` directly, on the live tax table and

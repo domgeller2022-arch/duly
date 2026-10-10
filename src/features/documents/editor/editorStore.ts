@@ -68,6 +68,8 @@ export interface EditorState {
   payments: Payment[];
   /** Credit this client holds, for the "apply credit to this invoice" offer. */
   clientCredits: ClientCredit[];
+  /** Credit already applied on this client's *other* open drafts — reserved, not available here. */
+  reservedCredit: number;
 
   /* ---- derived ---- */
   result: CalculationResult | null;
@@ -276,6 +278,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     taxCodes: [],
     payments: [],
     clientCredits: [],
+    reservedCredit: 0,
     result: null,
     loading: true,
     saving: false,
@@ -299,13 +302,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
           return;
         }
 
-        const [profile, client, contacts, items, taxCodes, clientCredits] = await Promise.all([
+        const [profile, client, contacts, items, taxCodes, clientCredits, reservedCredit] = await Promise.all([
           db.getBusinessProfile(bundle.document.profileId),
           bundle.document.clientId ? db.getClient(bundle.document.clientId) : Promise.resolve(undefined),
           db.listContacts(bundle.document.clientId ?? undefined),
           db.listItems({ activeOnly: true }),
           db.listTaxCodes(),
           bundle.document.clientId ? db.listClientCredits(bundle.document.clientId) : Promise.resolve([]),
+          bundle.document.clientId
+            ? reservedCreditFor(bundle.document.clientId, bundle.document.id)
+            : Promise.resolve(0),
         ]);
 
         // The same service every other writer uses. An issued document
@@ -334,6 +340,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           taxCodes,
           payments: bundle.payments,
           clientCredits,
+          reservedCredit,
           result,
           loading: false,
           dirty: false,
@@ -366,6 +373,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         document: withTotals,
         lines,
         result,
+        clientCredits: [],
+        reservedCredit: 0,
         loading: false,
         dirty: false,
         history: [],
@@ -388,6 +397,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         contacts: [],
         payments: [],
         clientCredits: [],
+        reservedCredit: 0,
         loading: false,
         dirty: false,
         history: [],
@@ -418,11 +428,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const next = applyClientDefaults(state.document, client);
 
       // The credit a client holds is theirs, not the previous client's, so it is
-      // re-read rather than carried across.
+      // re-read rather than carried across — and so is the credit their other
+      // open drafts have already reserved.
       if (client && client.id !== state.client?.id) {
-        void storage()
-          .listClientCredits(client.id)
-          .then((credits) => set({ clientCredits: credits }));
+        void Promise.all([
+          storage().listClientCredits(client.id),
+          state.document ? reservedCreditFor(client.id, state.document.id) : Promise.resolve(0),
+        ]).then(([credits, reservedCredit]) => set({ clientCredits: credits, reservedCredit }));
+      } else if (!client) {
+        set({ clientCredits: [], reservedCredit: 0 });
       }
 
       commit(
@@ -578,8 +592,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
         .filter((c) => c.appliedToDocumentId !== state.document?.id)
         .reduce((sum, c) => sum + Math.max(0, c.amount - c.appliedAmount), 0);
       // A credit held on the client record, set by hand or by an earlier overpayment,
-      // counts too — it is the same money.
-      return rows + (state.client?.openingCredit ?? 0);
+      // counts too — it is the same money. Credit applied on other open drafts for
+      // this client is reserved: without subtracting it, two drafts could each apply
+      // the same $50 and both finalise at $50 off when only $50 existed.
+      const held = rows + (state.client?.openingCredit ?? 0);
+      return Math.max(0, held - state.reservedCredit);
     },
 
     applyCredit(minor) {
@@ -775,6 +792,18 @@ export function setEditorRoundingMethod(method: 'total_invoice' | 'taxable_sale'
 
 export function editorRoundingMethod(): 'total_invoice' | 'taxable_sale' {
   return currentRoundingMethod;
+}
+
+/**
+ * Credit already applied on a client's *other* open drafts, which is reserved:
+ * two drafts must not both spend the same dollars. The draft being edited is
+ * excluded — its own application shows as `document.clientCreditApplied`.
+ */
+async function reservedCreditFor(clientId: string, excludeDocumentId: string): Promise<number> {
+  const drafts = await storage().listDocuments({ clientId, status: 'draft' });
+  return drafts
+    .filter((d) => d.id !== excludeDocumentId)
+    .reduce((sum, d) => sum + Math.max(0, d.clientCreditApplied), 0);
 }
 
 /* ------------------------------------------------------------------ */

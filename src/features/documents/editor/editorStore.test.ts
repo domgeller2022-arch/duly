@@ -119,4 +119,44 @@ describe("the editor's load", () => {
     const result = useEditorStore.getState().result;
     expect(result?.balance).toBe(0);
   });
+
+  it('does not offer credit another open draft for the same client has applied', async () => {
+    const db = await freshStorage();
+    const profile = newBusinessProfile({ name: 'Acme' });
+    const client = newClient({ displayName: 'Client Co', openingCredit: 5000 });
+    await db.saveBusinessProfile(profile);
+    await db.saveClient(client);
+
+    // Draft A has already put the client's whole $50 credit toward itself.
+    const draftA = documentSchema.parse({
+      ...newEntity({}),
+      type: 'invoice',
+      profileId: profile.id,
+      clientId: client.id,
+      status: 'draft',
+      currency: 'AUD',
+      issueDate: '2026-10-06',
+      dueDate: '2026-11-05',
+      clientCreditApplied: 5000,
+    });
+    await db.saveDocument(draftA, []);
+
+    const draftB = documentSchema.parse({
+      ...newEntity({}),
+      type: 'invoice',
+      profileId: profile.id,
+      clientId: client.id,
+      status: 'draft',
+      currency: 'AUD',
+      issueDate: '2026-10-06',
+      dueDate: '2026-11-05',
+    });
+    await db.saveDocument(draftB, []);
+
+    await useEditorStore.getState().load(draftB.id);
+
+    // The $50 the client holds is already spoken for by draft A, so this draft
+    // offers none — the two cannot both finalise at $50 off out of one $50.
+    expect(useEditorStore.getState().unappliedCredit()).toBe(0);
+  });
 });
