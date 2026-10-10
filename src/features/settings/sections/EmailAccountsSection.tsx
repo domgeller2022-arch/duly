@@ -77,7 +77,14 @@ export function EmailAccountsSection() {
       port: preset.port,
       secure: preset.secure,
       starttls: preset.starttls,
-      fromEmail: provider === 'proton_bridge' ? draft.fromEmail : draft.fromEmail,
+      fromEmail: draft.fromEmail,
+      // Proton Mail Bridge presents its own certificate, so a Bridge account
+      // is trusted by default — the box is editable now, and this is the value
+      // that actually persists and reaches the send. The checkbox used to be
+      // shown ticked but disabled for Bridge, so nothing was stored and every
+      // Bridge send failed TLS verification.
+      pinnedCertificateFingerprint:
+        provider === 'proton_bridge' ? draft.pinnedCertificateFingerprint || 'trusted' : '',
     });
   };
 
@@ -288,9 +295,8 @@ export function EmailAccountsSection() {
             </div>
             <div className="flex flex-wrap gap-4">
               <Checkbox
-                checked={draft.provider === 'proton_bridge' || draft.pinnedCertificateFingerprint !== ''}
+                checked={draft.pinnedCertificateFingerprint !== ''}
                 label="Trust this server's certificate (local Bridge)"
-                disabled={draft.provider === 'proton_bridge'}
                 onChange={(v) => patch({ pinnedCertificateFingerprint: v ? 'trusted' : '' })}
               />
               <Switch checked={draft.enabled} onChange={(v) => patch({ enabled: v })} label="Enabled" />

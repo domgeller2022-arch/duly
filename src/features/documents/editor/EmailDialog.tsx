@@ -16,6 +16,7 @@ import { useAppStore, useActiveProfile } from '@/state/app';
 import { useEditorStore } from './editorStore';
 import { platform, files, storage } from '@/adapters';
 import { tableBlob, renderBundlePdf, documentTableExport, type ExportFormat } from '@/lib/exports';
+import { recalculateDocument } from '@/lib/documentService';
 import { interpolate, MERGE_FIELDS, buildMergeValues } from '@/core/engines/merge';
 import { runAiTask } from '@/lib/ai';
 import { emailDraftTask } from '@/lib/aiTasks';
@@ -118,6 +119,27 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
       attachments,
     });
 
+  /**
+   * The rendered invoice as an SMTP attachment, or an empty list when the PDF
+   * cannot be built — the send still goes out without it.
+   */
+  const pdfAttachment = async (): Promise<{ fileName: string; content: string; mimeType: string }[]> => {
+    try {
+      const blob = await pdfBlob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error('Could not read the PDF'));
+        reader.readAsDataURL(blob);
+      });
+      return [
+        { fileName: `${document.number || document.id}.pdf`, content: dataUrl, mimeType: 'application/pdf' },
+      ];
+    } catch {
+      return [];
+    }
+  };
+
   const downloadPdf = async () => {
     try {
       const blob = await pdfBlob();
@@ -179,6 +201,10 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
   const scheduleSend = async () => {
     if (!scheduledFor) return;
     try {
+      // Render the invoice now and keep it with the queued send: the outbox
+      // used to queue with no attachment, and the scheduler that delivers it
+      // at 9am cannot render a PDF.
+      const queuedAttachments = await pdfAttachment();
       await storage().saveOutbox({
         ...newEntity({}),
         documentId: document.id,
@@ -193,9 +219,9 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         cc: [],
         bcc: [],
         accountId: useAppStore.getState().profiles.find((p) => p.id === document.profileId)?.sendingEmailAccountId ?? null,
-        attachmentNames: [],
+        attachmentNames: queuedAttachments.map((a) => a.fileName),
         pdfPath: null,
-        pdfDataUrl: null,
+        pdfDataUrl: queuedAttachments[0]?.content ?? null,
         attempts: 0,
         lastError: null,
       });
@@ -248,25 +274,7 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
       // A real send goes through the business's sending account, with the
       // rendered PDF attached. On the web the attachment is the PDF the
       // user downloads to attach; on desktop it is the SMTP attachment.
-      let pdfPayload: { fileName: string; content: string; mimeType: string }[] = [];
-      try {
-        const blob = await pdfBlob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(reader.error ?? new Error('Could not read the PDF'));
-          reader.readAsDataURL(blob);
-        });
-        pdfPayload = [
-          {
-            fileName: `${document.number || document.id}.pdf`,
-            content: dataUrl,
-            mimeType: 'application/pdf',
-          },
-        ];
-      } catch {
-        // No PDF, no attachment: the send still goes out.
-      }
+      const pdfPayload = await pdfAttachment();
 
       const mailResult = await platform().mail.send({
         accountId: useAppStore.getState().profiles.find((p) => p.id === document.profileId)?.sendingEmailAccountId ?? null,
@@ -286,7 +294,7 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         body,
         templateId,
         sentAt: new Date().toISOString(),
-        status: mailResult.ok ? 'opened_in_app' : 'failed',
+        status: !mailResult.ok ? 'failed' : mailResult.via === 'smtp' ? 'sent' : 'opened_in_app',
         error: mailResult.error ?? null,
         via: mailResult.via,
         cc: [],
@@ -295,6 +303,16 @@ export function EmailDialog({ open, onClose }: { open: boolean; onClose: () => v
         attachmentNames: pdfPayload.map((a) => a.fileName),
         notes: '',
       });
+
+      // A real SMTP send has reached the client: the invoice is Sent. The web's
+      // mailto only opened the mail app, so it is not. A payment or a later
+      // recalculation moves it on from Sent as before. Recalculated through the
+      // service (snapshot codes for an issued document), never edited raw.
+      if (mailResult.ok && mailResult.via === 'smtp' && document.status === 'finalised') {
+        await recalculateDocument({ document, documentPatch: { status: 'sent' }, deriveStatus: false });
+        await useEditorStore.getState().reload();
+      }
+
       push({
         tone: mailResult.ok ? 'success' : 'error',
         title: mailResult.ok ? 'Mail app opened' : 'Could not open the mail app',

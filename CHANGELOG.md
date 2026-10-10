@@ -23,6 +23,41 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R20 — desktop email sends, and sends as itself
+
+- **"Send test email" works on the desktop.** The Rust command required a
+  `secretKey`, but the settings screen's test connection carries the password
+  the user just typed and names no keychain entry — so every test send failed
+  with a serde "missing field" error before a connection was opened. The field
+  is optional now; a real send still names its keychain key, and the password
+  never crosses into the webview on one.
+- **A Proton Bridge account can be trusted, and stays trusted.** The "Trust
+  this server's certificate" checkbox was drawn ticked but disabled for a
+  Bridge account and never wrote anything, so the account's pinned fingerprint
+  stayed empty, TLS verification rejected Bridge's own certificate, and every
+  Bridge send failed. The box is editable and persists now, and choosing the
+  Bridge provider defaults it on.
+- **A real send goes out as the account's own address.** Every real send used
+  the business profile's email as From, so an account that authenticates as one
+  address sent as another — which a Bridge relay rejects — and replies went to
+  the wrong mailbox. The desktop adapter sets From from the account it is about
+  to authenticate with (its display name when set, the business name
+  otherwise).
+- **A scheduled send carries the invoice PDF, and a real send marks the
+  invoice Sent.** The outbox queued with no attachment, and the scheduler that
+  delivers it cannot render a PDF at 9am, so a scheduled invoice went out bare;
+  the PDF is rendered and stored when the send is queued now. And a successful
+  SMTP send moves a finalised invoice to Sent (through the service, on its
+  snapshot codes), while the web's mailto — which only opens the mail app —
+  leaves the status alone.
+
+Tests: a real send carries the account's address, not the business's, with the
+account's keychain key and pinned fingerprint (fails on the old From). The Rust
+change is compiled — `cargo check --offline` passes on this machine.
+
+Boundary, named: the web mailto path still cannot authenticate, so it does not
+mark a document Sent.
+
 ### Remediation R19 — CI installs the browser the project pins
 
 - **The browser job installs Playwright after `npm ci`.** It ran

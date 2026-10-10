@@ -87,8 +87,13 @@ export class DesktopMailAdapter implements MailAdapter {
       starttls: account?.starttls ?? true,
       username: account?.username ?? '',
       secretKey,
-      fromName: request.fromName,
-      fromEmail: request.fromEmail,
+      // A real send goes out as the account's own address, never the
+      // business's: a Proton Bridge account that sends as a different address
+      // than it authenticates as is rejected by the relay, and the recipient's
+      // reply should reach the sending mailbox. The business name is the
+      // display name when the account does not set one.
+      fromName: account?.fromName || request.fromName,
+      fromEmail: account?.fromEmail || request.fromEmail,
       replyTo: request.replyTo || undefined,
       to: request.to,
       cc: request.cc,
@@ -114,6 +119,8 @@ export class DesktopMailAdapter implements MailAdapter {
     username: string;
     secretRef: string;
     pinnedFingerprint: string;
+    fromEmail: string;
+    fromName: string;
   } | null> {
     const { storage } = await import('../index');
     const accounts = await storage().listEmailAccounts();
@@ -128,6 +135,8 @@ export class DesktopMailAdapter implements MailAdapter {
       username: account.bridgeGeneratedUsername || account.fromEmail,
       secretRef: account.secretRef,
       pinnedFingerprint: account.pinnedCertificateFingerprint,
+      fromEmail: account.fromEmail,
+      fromName: account.fromName,
     };
   }
 

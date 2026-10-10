@@ -31,7 +31,11 @@ struct SendArgs {
     starttls: bool,
     username: String,
     /// The keychain entry the password lives under. Resolved here, in
-    /// Rust: the password never crosses into the webview.
+    /// Rust: the password never crosses into the webview. Defaulted, because
+    /// the settings screen's test connection names no key — it carries the
+    /// password the user just typed — and requiring it made every test send
+    /// fail with a serde "missing field" error before a connection was made.
+    #[serde(default)]
     secret_key: String,
     /// Only the settings screen's test connection sets this, with the
     /// password the user just typed before it was stored.
