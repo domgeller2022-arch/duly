@@ -110,6 +110,80 @@ describe('xero exports', () => {
     expect(csv).toContain('INV-2026-0001');
     expect(csv).toContain('1100');
   });
+
+  it('a line on "Document default" exports under the document tax code, not GST Free', () => {
+    const doc = { ...invoice(), taxCodeId: 'tax_gst' };
+    const line = documentLineSchema.parse({
+      ...STAMP,
+      id: 'line-1',
+      documentId: doc.id,
+      type: 'item',
+      description: 'Consulting',
+      quantity: '1',
+      unitPrice: 100000,
+      // No taxCodeId: the line is left on "Document default".
+    });
+    expect(line.taxCodeId).toBeNull();
+    const result = calculate({ document: doc, lines: [line], payments: [], taxCodes: [...DEFAULT_TAX_CODES] });
+    const csv = xeroInvoicesCsv([{ document: doc, lines: [line], result }], [clientFor(doc)], [
+      ...DEFAULT_TAX_CODES,
+    ]);
+    expect(csv).toContain('GST on Income');
+  });
+
+  it('keeps sub-cent precision on a discounted multi-quantity line', () => {
+    const doc = invoice();
+    const line = documentLineSchema.parse({
+      ...STAMP,
+      id: 'line-1',
+      documentId: doc.id,
+      type: 'item',
+      description: 'Consulting',
+      quantity: '3',
+      unitPrice: 333,
+      taxCodeId: 'tax_gst',
+      position: 1,
+    });
+    const discount = documentLineSchema.parse({
+      ...STAMP,
+      id: 'disc-1',
+      documentId: doc.id,
+      type: 'discount',
+      description: 'Discount',
+      discountType: 'percent',
+      discountValue: '10',
+      position: 0,
+    });
+    const lines = [discount, line];
+    const result = calculate({ document: doc, lines, payments: [], taxCodes: [...DEFAULT_TAX_CODES] });
+    const csv = xeroInvoicesCsv([{ document: doc, lines, result }], [clientFor(doc)], [...DEFAULT_TAX_CODES]);
+    // 3 x $3.33 less 10% is $8.99, so the unit price is 2.9967 — rounding it to
+    // the cent would make the accountant's line total $9.00.
+    expect(csv).toContain('2.9967');
+  });
+
+  it('pays in the invoice currency, not always AUD', () => {
+    const doc = { ...invoice(), currency: 'JPY' };
+    const csv = xeroPaymentsCsv(
+      [
+        {
+          ...STAMP,
+          id: 'pay-1',
+          documentId: doc.id,
+          date: '2026-10-07',
+          amount: 5000,
+          method: 'bank_transfer',
+          reference: 'INV-2026-0001',
+          note: '',
+          isDeposit: false,
+          bankTransactionId: null,
+        },
+      ],
+      [doc],
+    );
+    // 5000 yen has no minor units, so it is 5000 — not 50 as AUD would read it.
+    expect(csv).toContain('5000');
+  });
 });
 
 describe('myob exports', () => {

@@ -12,7 +12,8 @@
  */
 
 import { writeCsv } from '@/core/csv';
-import { toMajorNumber } from '@/core/money/money';
+import { toBig, toMajorNumber } from '@/core/money/money';
+import { minorUnitFactor } from '@/core/money/currencies';
 import type { Client, Document, DocumentLine, Payment } from '@/core/schemas';
 import type { CalculationResult } from '@/core/calc/calculate';
 import type { TaxCode } from '@/core/tax/tax';
@@ -30,6 +31,15 @@ function xeroTaxType(taxCodeId: string | null, taxCodes: TaxCode[]): string {
   return code && ['gst', 'custom', 'compound'].includes(code.type) ? 'GST on Income' : 'GST Free Income';
 }
 
+/**
+ * The tax code a line is actually taxed under. A line left on "Document
+ * default" has no code of its own, and exports under the document's — without
+ * this fallback such a line was written as GST Free even though GST applied.
+ */
+function effectiveTaxCodeId(line: DocumentLine, document: Document): string | null {
+  return line.taxCodeId ?? document.taxCodeId;
+}
+
 /** The per-unit tax-exclusive price, after every discount. */
 function exclusiveUnitPrice(
   line: DocumentLine,
@@ -43,7 +53,10 @@ function exclusiveUnitPrice(
   if (line.type === 'expense' && line.amountOverride !== null) {
     return toMajorNumber(net, currency);
   }
-  return qty > 0 ? toMajorNumber(Math.round(net / qty), currency) : 0;
+  if (qty <= 0) return 0;
+  // Four decimals, not whole cents: rounding a per-unit price to the cent made
+  // a 3 x $3.33 line come to $9.99 instead of $10.00 in the accountant's system.
+  return toBig(net).div(minorUnitFactor(currency)).div(qty).round(4).toNumber();
 }
 
 export type AccountingSystem = 'xero' | 'myob';
@@ -94,7 +107,7 @@ export function xeroInvoicesCsv(documents: AccountantDocument[], clients: Client
         Number.parseFloat(line.quantity) || (line.type === 'expense' ? 1 : 0),
         exclusiveUnitPrice(line, result, currency),
         '200',
-        xeroTaxType(line.taxCodeId, taxCodes),
+        xeroTaxType(effectiveTaxCodeId(line, document), taxCodes),
       ]);
     }
   }
@@ -121,13 +134,15 @@ export function xeroInvoicesCsv(documents: AccountantDocument[], clients: Client
  */
 export function xeroPaymentsCsv(payments: Payment[], invoices: Document[]): string {
   const numberFor = (documentId: string) => invoices.find((d) => d.id === documentId)?.number ?? '';
+  // Payments are in the invoice's currency, not always AUD.
+  const currencyFor = (documentId: string) => invoices.find((d) => d.id === documentId)?.currency ?? 'AUD';
   return writeCsv(
     ['*InvoiceNumber', '*AccountCode', '*Date', '*Amount', 'Reference'],
     payments.map((payment) => [
       numberFor(payment.documentId),
       '970',
       payment.date,
-      toMajorNumber(payment.amount, 'AUD'),
+      toMajorNumber(payment.amount, currencyFor(payment.documentId)),
       payment.reference,
     ]),
   );
@@ -172,7 +187,7 @@ export function myobInvoicesCsv(documents: AccountantDocument[], clients: Client
         line.description,
         Number.parseFloat(line.quantity) || (line.type === 'expense' ? 1 : 0),
         exclusiveUnitPrice(line, result, currency),
-        xeroTaxType(line.taxCodeId, taxCodes) === 'GST on Income' ? 'GST' : 'GST Free',
+        xeroTaxType(effectiveTaxCodeId(line, document), taxCodes) === 'GST on Income' ? 'GST' : 'GST Free',
       ]);
     }
   }
@@ -185,12 +200,14 @@ export function myobInvoicesCsv(documents: AccountantDocument[], clients: Client
 /** MYOB payment import. */
 export function myobPaymentsCsv(payments: Payment[], invoices: Document[]): string {
   const numberFor = (documentId: string) => invoices.find((d) => d.id === documentId)?.number ?? '';
+  // Payments are in the invoice's currency, not always AUD.
+  const currencyFor = (documentId: string) => invoices.find((d) => d.id === documentId)?.currency ?? 'AUD';
   return writeCsv(
     ['*Invoice No.', '*Date', '*Amount Received', 'Method', 'Reference'],
     payments.map((payment) => [
       numberFor(payment.documentId),
       payment.date,
-      toMajorNumber(payment.amount, 'AUD'),
+      toMajorNumber(payment.amount, currencyFor(payment.documentId)),
       payment.method.replace(/_/g, ' '),
       payment.reference,
     ]),
