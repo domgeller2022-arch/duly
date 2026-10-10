@@ -23,7 +23,7 @@ import type {
 import { documentLineSchema, documentSchema } from '@/core/schemas/document';
 import { newEntity, newId } from '@/core/schemas/common';
 import type { Settings } from '@/core/schemas/settings';
-import { dueDateFor, quoteExpiry } from '@/core/validation/dates';
+import { dueDateFor, quoteExpiry, type CustomTerm } from '@/core/validation/dates';
 import { percentToFraction, toMajorNumber } from '@/core/money/money';
 import { currencyDecimals } from '@/core/money/currencies';
 import { DEFAULT_TAX_CODES } from '@/core/tax/tax';
@@ -69,7 +69,7 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
       clientId: client?.id ?? null,
       type,
       issueDate,
-      dueDate: dueDateFor(issueDate, termsId),
+      dueDate: dueDateFor(issueDate, termsId, settings.customTerms),
       termsId,
       // A copy carries what its source said: the client, the pricing mode,
       // the currency and the templates. Falling back to the business's
@@ -187,7 +187,13 @@ export function nextDraftNumber(type: Document['type']): string {
 export function applyClientDefaults(
   document: Document,
   client: Client | null,
-  options: { preserveCurrency?: boolean; preserveTerms?: boolean; preserveTemplate?: boolean } = {},
+  options: {
+    preserveCurrency?: boolean;
+    preserveTerms?: boolean;
+    preserveTemplate?: boolean;
+    /** The settings' custom terms, so a custom client term is not Net 30. */
+    customTerms?: CustomTerm[];
+  } = {},
 ): Document {
   if (!client) return document;
 
@@ -196,7 +202,9 @@ export function applyClientDefaults(
     clientId: client.id,
     currency: options.preserveCurrency ? document.currency : client.defaultCurrency,
     termsId: options.preserveTerms ? document.termsId : client.defaultTermsId,
-    dueDate: options.preserveTerms ? document.dueDate : dueDateFor(document.issueDate, client.defaultTermsId),
+    dueDate: options.preserveTerms
+      ? document.dueDate
+      : dueDateFor(document.issueDate, client.defaultTermsId, options.customTerms),
     taxCodeId: client.defaultTaxCodeId ?? document.taxCodeId,
     designTemplateId: options.preserveTemplate
       ? document.designTemplateId

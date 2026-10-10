@@ -23,6 +23,39 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R18 — the two untouched findings, and redaction that redacts
+
+Three findings the re-audit found still open, two of them contradicting a
+"fixed" claim in the changelog.
+
+- **AI feature runs send the API key.** R9's changelog said the pipeline
+  resolves the key from settings; it did not — `runAiTask` used only a
+  caller-supplied key, and no caller passed one, so every cloud feature run
+  went out with no Authorization header and got a 401, while the settings'
+  own "Test connection" succeeded because it read the key itself. The pipeline
+  now resolves `settings.aiSecretRef` through the secrets adapter; a caller
+  may still pass a key (the test connection does).
+- **A custom payment term resolves to its real due date.** Every `dueDateFor`
+  caller omitted the settings' custom terms, so a client on a user-added
+  "Net 45" — or anyone changing the issue date or the terms on such a
+  document, or opening the deposit path — silently got the Net 30 fallback.
+  The editor's header, new documents, client defaults, recurring runs, the
+  deposit balance due date and the reports context pass the custom terms now;
+  the term type is the settings' own shape (`CustomTerm`), not a stand-in for
+  `PaymentTerms`.
+- **Redaction masks client names.** The switch was on by default but only ABNs
+  and amounts were masked, so ask-your-data sent client names to a cloud model
+  anyway. `redactForAi` now takes the client names and replaces them with
+  `[client]` (matched literally), alongside the ABN and amount rules.
+
+Tests (fail before, pass after): a client on a custom "Net 45" gets a due date
+45 days out, not Net 30; `redactForAi` removes a client name; a run with a key
+saved in settings carries it on the request.
+
+Boundary, named: the AI request-preview/spend cap and receipt-photo redaction
+(the photo is the user's own request, and cannot be redacted without
+destroying it) remain as before.
+
 ### Remediation R17 — the daily backup goes to the backup folder
 
 - **The daily backup no longer lands in the invoice folder.** The scheduler

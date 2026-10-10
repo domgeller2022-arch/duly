@@ -114,7 +114,7 @@ export function PaymentsPanel({ open, onClose }: { open: boolean; onClose: () =>
         isDeposit && document.deposit.enabled && !document.deposit.paid
           ? {
               deposit: { ...document.deposit, paid: true, paidAmount: amountMinor },
-              dueDate: document.deposit.balanceDueDate ?? dueDateFor(date, document.termsId),
+              dueDate: document.deposit.balanceDueDate ?? dueDateFor(date, document.termsId, settings?.customTerms),
             }
           : {};
 

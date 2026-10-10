@@ -52,9 +52,21 @@ export function extractJson(text: string): unknown {
   return JSON.parse(slice);
 }
 
-/** Redact client-identifying details from incidental context (see ask-data). */
-export function redactForAi(text: string): string {
-  return text
+/**
+ * Redact client-identifying details from incidental context (see ask-data).
+ *
+ * Names are redacted too, not only ABNs and amounts: the switch is on by
+ * default precisely so a client's identity does not reach a cloud model. The
+ * names are matched literally (split/join, not a regex) so a name containing
+ * punctuation still matches.
+ */
+export function redactForAi(text: string, names: string[] = []): string {
+  let out = text;
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (trimmed.length >= 2) out = out.split(trimmed).join('[client]');
+  }
+  return out
     .replace(/\b\d{2}\s?\d{3}\s?\d{3}\s?\d{3}\b/g, '[ABN]')
     .replace(/[$€£]\s?[\d,]+(?:\.\d{2})?/g, '[amount]');
 }
@@ -95,6 +107,14 @@ export async function runAiTask<T>(
 
   if (options?.signal?.aborted) return { ok: false, value: null, error: 'Cancelled.', tokens: 0 };
 
+  // The key comes from settings, resolved through the secrets adapter. R9's
+  // changelog claimed the pipeline did this; the code only ever used a
+  // caller-supplied key, and no caller passed one — so every cloud feature run
+  // went out with no Authorization header and got a 401. A caller may still
+  // pass a key (the settings screen's own test connection does).
+  const apiKey =
+    options?.apiKey ?? ((await platform().secrets.get(settings.aiSecretRef || 'ai-api-key')) ?? undefined);
+
   const model = task.model?.(settings) || '';
   const prompt = task.prompt(args);
   const images = task.images?.(args) ?? [];
@@ -113,7 +133,7 @@ export async function runAiTask<T>(
         prompt,
         images,
         model,
-        apiKey: options?.apiKey,
+        apiKey,
       },
       baseUrl,
     );

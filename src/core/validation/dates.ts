@@ -17,6 +17,16 @@ import { getCurrency } from '../money/currencies';
 
 export type DateString = string;
 
+/**
+ * A user-defined payment term, as stored in settings: an id, a label and a day
+ * count (null for a label-only "custom date" term).
+ */
+export interface CustomTerm {
+  id: string;
+  name: string;
+  days: number | null;
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -99,7 +109,7 @@ export function maxIso(dates: DateString[]): DateString | null {
  */
 export function resolveTerms(
   termsId: string,
-  custom?: { id: string; name: string; days: number | null }[],
+  custom?: CustomTerm[],
 ): PaymentTerms {
   const built = findTerm(termsId);
   if (built) return built;
@@ -145,7 +155,7 @@ export function endOfNextMonth(issueDate: DateString): DateString {
  * The due date for an issue date and a set of terms.
  * `end_of_next_month` with a days override is honoured when supplied.
  */
-export function dueDateFor(issueDate: DateString, termsId: string, customTerms?: PaymentTerms[]): DateString {
+export function dueDateFor(issueDate: DateString, termsId: string, customTerms?: CustomTerm[]): DateString {
   const terms = resolveTerms(termsId, customTerms);
   switch (terms.kind) {
     case 'due_on_receipt':
@@ -333,7 +343,7 @@ export function depositBalanceDueDate(
   depositPaidOn: DateString,
   termsId: string,
   explicit: DateString | null,
-  customTerms?: PaymentTerms[],
+  customTerms?: CustomTerm[],
 ): DateString {
   if (explicit && isDateString(explicit)) return explicit;
   return dueDateFor(depositPaidOn, termsId, customTerms);

@@ -28,6 +28,7 @@ import type {
 } from '@/core/schemas';
 import { calculate, applyTotals, type CalculationResult } from '@/core/calc/calculate';
 import { recalculateDocument, taxCodesFor } from '@/lib/documentService';
+import type { CustomTerm } from '@/core/validation/dates';
 import { signatureSchema } from '@/core/schemas/crm';
 import { storage } from '@/adapters';
 import { newEntity } from '@/core/schemas/common';
@@ -425,7 +426,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!state.document) return;
 
       const recipients = resolveRecipients(client, state.contacts);
-      const next = applyClientDefaults(state.document, client);
+      const next = applyClientDefaults(state.document, client, { customTerms: currentCustomTerms });
 
       // The credit a client holds is theirs, not the previous client's, so it is
       // re-read rather than carried across — and so is the credit their other
@@ -785,6 +786,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
  * the user changes it in Settings.
  */
 let currentRoundingMethod: 'total_invoice' | 'taxable_sale' = 'total_invoice';
+
+/**
+ * The settings' custom payment terms in force, module-level for the same
+ * reason as the rounding method: applying a client's default term must resolve
+ * a custom term ("Net 45") to its real due date, not fall back to Net 30.
+ */
+let currentCustomTerms: CustomTerm[] = [];
+
+export function setEditorCustomTerms(terms: CustomTerm[]): void {
+  currentCustomTerms = terms;
+}
 
 export function setEditorRoundingMethod(method: 'total_invoice' | 'taxable_sale'): void {
   currentRoundingMethod = method;

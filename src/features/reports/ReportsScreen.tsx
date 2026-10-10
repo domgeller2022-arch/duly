@@ -229,7 +229,7 @@ export function ReportsScreen() {
     // to somebody else's server. The invoice-entry instruction and the
     // receipt photo are the user's own request and cannot be redacted
     // without destroying it.
-    return settings?.aiRedact ? redactForAi(raw) : raw;
+    return settings?.aiRedact ? redactForAi(raw, clients.map((c) => c.displayName)) : raw;
   }, [aged, income, gst, clients, currency, settings?.aiRedact]);
 
   const download = () => {

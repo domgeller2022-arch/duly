@@ -94,7 +94,7 @@ export function DocumentHeaderForm({
             onChange={(e) => {
               const issueDate = e.target.value;
               // The due date follows the issue date and terms, always.
-              onPatch({ issueDate, dueDate: dueDateFor(issueDate, doc.termsId) });
+              onPatch({ issueDate, dueDate: dueDateFor(issueDate, doc.termsId, terms) });
             }}
           />
         </Field>
@@ -105,7 +105,7 @@ export function DocumentHeaderForm({
             disabled={locked}
             onChange={(e) => {
               const termsId = e.target.value;
-              onPatch({ termsId, dueDate: dueDateFor(doc.issueDate, termsId) });
+              onPatch({ termsId, dueDate: dueDateFor(doc.issueDate, termsId, terms) });
             }}
           >
             {terms.map((t) => (

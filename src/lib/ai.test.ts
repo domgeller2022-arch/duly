@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from 'vitest';
-import { aiGuard, extractJson, runAiTask } from './ai';
+import { aiGuard, extractJson, redactForAi, runAiTask } from './ai';
 import { invoiceEntryTask, invoiceEntrySchema } from './aiTasks';
 import { createWebPlatform, setPlatform } from '@/adapters';
 import { settingsSchema, type Settings } from '@/core/schemas';
@@ -56,6 +56,16 @@ describe('extractJson', () => {
 
   it('throws when there is no JSON at all', () => {
     expect(() => extractJson('no json here')).toThrow(/no JSON/i);
+  });
+});
+
+describe('redactForAi', () => {
+  it('masks client names as well as ABNs and amounts', () => {
+    const out = redactForAi('Acme Pty Ltd owes $1,200.00, ABN 51 824 753 556.', ['Acme Pty Ltd']);
+    expect(out).not.toContain('Acme Pty Ltd');
+    expect(out).toContain('[client]');
+    expect(out).toContain('[amount]');
+    expect(out).toContain('[ABN]');
   });
 });
 
@@ -125,6 +135,29 @@ describe('runAiTask — the acceptance: "Bill Acme 3 days consulting at $1,200/d
     expect(calls.length).toBe(2);
     expect(calls[1].request.system).toContain('previous reply was invalid');
     expect(calls[1].request.system).toContain('lines');
+  });
+
+  it('sends the API key stored in settings — no caller passes one', async () => {
+    const platform = (await import('@/adapters')).platform();
+    const calls: { request: AiCompletionRequest }[] = [];
+    const original = platform.ai;
+    Object.defineProperty(platform, 'ai', { value: mockAdapter(REPLY, calls), configurable: true });
+
+    const settings = settingsWith({
+      aiEnabled: true,
+      aiLocalOnly: false,
+      aiBaseUrl: 'https://openrouter.ai/api/v1',
+      aiSecretRef: 'ai-api-key',
+    });
+    await platform.storage.saveSettings(settings);
+    await platform.secrets.set('ai-api-key', 'sk-stored');
+
+    const result = await runAiTask(invoiceEntryTask, { instruction: 'Bill Acme' });
+    Object.defineProperty(platform, 'ai', { value: original, configurable: true });
+
+    expect(result.ok).toBe(true);
+    // Before R18 this went out with no key at all, so every cloud run got a 401.
+    expect(calls[0].request.apiKey).toBe('sk-stored');
   });
 
   it('the parsed result becomes a correct draft when calculated', async () => {

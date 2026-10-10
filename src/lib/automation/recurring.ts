@@ -106,6 +106,7 @@ async function createRun(scheduleId: string, runDate: string): Promise<RunOutcom
   const source = schedule.sourceDocumentId ? await db.getDocument(schedule.sourceDocumentId) : null;
   const profile = await db.getBusinessProfile(schedule.profileId);
   if (!profile) return null;
+  const settings = await db.getSettings();
 
   const clientId = schedule.clientId ?? source?.clientId ?? null;
   const termsId = schedule.termsId ?? source?.termsId ?? 'net_30';
@@ -130,7 +131,7 @@ async function createRun(scheduleId: string, runDate: string): Promise<RunOutcom
   const dueDate =
     schedule.dueOffsetDays !== null && schedule.dueOffsetDays !== undefined
       ? addDays(runDate, schedule.dueOffsetDays)
-      : dueDateFor(runDate, termsId);
+      : dueDateFor(runDate, termsId, settings?.customTerms);
 
   // Parsed rather than hand-built so every schema default is applied exactly
   // once, in one place, with no risk of a run producing a document the editor

@@ -254,4 +254,24 @@ describe('copies carry what the source said (duplicate, convert, credit)', () =>
     );
     expect(copy.lines.filter((l) => l.type === 'discount')).toHaveLength(1);
   });
+
+  it('resolves a custom payment term to its real due date, not Net 30', () => {
+    // A client whose default terms are a user-added "Net 45" must get 45 days,
+    // not the Net 30 fallback the omitted-custom-terms callers produced.
+    const customSettings = settingsSchema.parse({
+      ...STAMPS,
+      id: 'settings',
+      customTerms: [{ id: 'net_45', name: 'Net 45', days: 45 }],
+    });
+    const customClient = newClient({ displayName: 'Client Co', defaultTermsId: 'net_45' });
+    const built = createDocument({
+      type: 'invoice',
+      profile,
+      settings: customSettings,
+      client: customClient,
+      today: '2026-10-06',
+    });
+    expect(built.document.termsId).toBe('net_45');
+    expect(built.document.dueDate).toBe('2026-11-20');
+  });
 });

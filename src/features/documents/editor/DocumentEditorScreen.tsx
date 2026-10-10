@@ -33,7 +33,7 @@ import { contentPresetSchema } from '@/core/schemas/template';
 import { newEntity } from '@/core/schemas/common';
 import { useAppStore, useActiveProfile } from '@/state/app';
 import { files, storage } from '@/adapters';
-import { isLocked, setEditorRoundingMethod, useEditorStore } from './editorStore';
+import { isLocked, setEditorCustomTerms, setEditorRoundingMethod, useEditorStore } from './editorStore';
 import { LineGrid, type ColumnSet } from './LineGrid';
 import { TotalsPanel } from './TotalsPanel';
 import { DocumentHeaderForm } from './DocumentHeaderForm';
@@ -151,7 +151,10 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
   /* ---------------------------------------------------------------- */
 
   useEffect(() => {
-    if (settings) setEditorRoundingMethod(settings.roundingMethod);
+    if (settings) {
+      setEditorRoundingMethod(settings.roundingMethod);
+      setEditorCustomTerms(settings.customTerms);
+    }
   }, [settings]);
 
   useEffect(() => {
