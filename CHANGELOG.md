@@ -23,6 +23,29 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R24 — the last wrong business, the Bridge test send, and the submit wording
+
+Four one-line fixes from the third check.
+
+- **"Invoice unbilled time" and "New schedule" use the selected business.**
+  Both still took `profiles[0]`, so with two businesses the time invoice and a
+  new recurring schedule were created under the wrong one — the same bug R16
+  fixed in Reports. Both use the active profile now.
+- **The Proton Bridge test send trusts the account's certificate.** Real sends
+  passed the account's `pinnedFingerprint`; the settings "Send test email" did
+  not, so it verified Bridge's own self-signed certificate, failed, and said
+  the account was broken when a real send would have worked. The test passes
+  the same setting now.
+- **The submit dialog no longer contradicts itself.** Its summary said the
+  issues "must be fixed before submitting" while the footer offered "Submit
+  with issues" — and the editor's red banner said the same. Both say "fix them,
+  or submit with issues" when an override is available; "must be fixed" is kept
+  for the one hard block (no line items).
+- **"Submit with issues" no longer auto-downloads.** With "After submit" set to
+  "Automatically download a PDF", a document submitted with issues was still
+  downloaded — the one broadcast the spec meant to stop. It is skipped now,
+  while manual Export still works.
+
 ### Remediation R23 — "Submit with issues"
 
 The feature from the re-audit's spec, built on request. An invoice that fails

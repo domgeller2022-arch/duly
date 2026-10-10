@@ -56,6 +56,10 @@ export function TimeTrackingScreen() {
   const clients = useAppStore((s) => s.clients);
   const expenses = useAppStore((s) => s.expenses);
   const profiles = useAppStore((s) => s.profiles);
+  const activeProfileId = useAppStore((s) => s.activeProfileId);
+  // The business selected in the switcher, not the first in the list: with two
+  // businesses, billing time under the wrong one is a silently wrong invoice.
+  const profile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   const settings = useAppStore((s) => s.settings);
   const today = useAppStore((s) => s.today);
   const taxCodes = useAppStore((s) => s.taxCodes);
@@ -87,7 +91,7 @@ export function TimeTrackingScreen() {
   const runningHours = running ? (now - running.timerStartedAt) / 3_600_000 : 0;
 
   const startTimer = async () => {
-    if (!profiles[0]) {
+    if (!profile) {
       push({ tone: 'warning', title: 'Create a business first' });
       return;
     }
@@ -143,7 +147,6 @@ export function TimeTrackingScreen() {
    * becomes a correct invoice in one action.
    */
   const invoiceUnbilled = async () => {
-    const profile = profiles[0];
     if (!profile || !invoiceClientId) {
       push({ tone: 'warning', title: 'Pick a client to bill' });
       return;

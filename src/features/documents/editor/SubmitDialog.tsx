@@ -162,7 +162,7 @@ export function SubmitDialog({
       // What submit does next: the setting decides. The default is nothing —
       // the document is in the list. download_pdf renders and downloads;
       // open_email opens the mailbox of choice with the details merged.
-      if (settings.onSubmitAction === 'download_pdf' && !outcome.pdfPath) {
+      if (settings.onSubmitAction === 'download_pdf' && !outcome.pdfPath && !withIssues) {
         try {
           const blob = await renderBundlePdf({
             document: outcome.document,
@@ -233,7 +233,11 @@ export function SubmitDialog({
       onClose={onClose}
       persistent={submitting}
       title="Submit this document"
-      description={summarise(compliance)}
+      description={
+        canOverride
+          ? `${counts.block} issue${counts.block === 1 ? '' : 's'} — fix them, or submit with issues`
+          : summarise(compliance)
+      }
       size="lg"
       footer={
         <>

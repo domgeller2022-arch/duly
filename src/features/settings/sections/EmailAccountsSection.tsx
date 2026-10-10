@@ -130,6 +130,10 @@ export function EmailAccountsSection() {
         starttls: draft.starttls,
         username: draft.bridgeGeneratedUsername || draft.fromEmail,
         password: password || ((await platform().secrets.get(draft.secretRef || `smtp:${draft.id}`)) ?? ''),
+        // The account's own trust setting, so a Bridge account's test send
+        // trusts the same certificate a real send does — without it the test
+        // checked Bridge's self-signed certificate and always failed.
+        pinnedFingerprint: draft.pinnedCertificateFingerprint,
         fromEmail: draft.fromEmail,
         to: draft.fromEmail || 'test@example.com',
       });

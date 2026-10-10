@@ -82,6 +82,7 @@ export function RecurringScreen() {
   const documents = useAppStore((s) => s.documents);
   const today = useAppStore((s) => s.today);
   const profiles = useAppStore((s) => s.profiles);
+  const activeProfileId = useAppStore((s) => s.activeProfileId);
   const saveRecurringSchedule = useAppStore((s) => s.saveRecurringSchedule);
   const removeRecurringSchedule = useAppStore((s) => s.removeRecurringSchedule);
 
@@ -90,7 +91,8 @@ export function RecurringScreen() {
 
   const startNew = () => {
     const now = new Date().toISOString();
-    const profile = profiles[0];
+    // The business selected in the switcher, not the first in the list.
+    const profile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
     if (!profile) {
       push({
         tone: 'warning',

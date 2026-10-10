@@ -591,7 +591,11 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
       {blocking.length > 0 && (
         <Alert
           tone="error"
-          title={`${blocking.length} issue${blocking.length === 1 ? '' : 's'} must be fixed before submitting`}
+          title={
+            blocking.some((check) => check.id === 'no-lines')
+              ? `${blocking.length} issue${blocking.length === 1 ? '' : 's'} must be fixed before submitting`
+              : `${blocking.length} issue${blocking.length === 1 ? '' : 's'} — fix them, or submit with issues`
+          }
         >
           <ul className="mt-1 list-disc space-y-1 pl-4">
             {blocking.map((check) => (
