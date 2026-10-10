@@ -100,6 +100,30 @@ export function hasCounter(pattern: string): boolean {
   return /\{#+\}/.test(pattern);
 }
 
+/** Thrown when a number pattern cannot produce a unique number. */
+export class NumberPatternError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NumberPatternError';
+  }
+}
+
+/**
+ * Refuse a pattern that cannot produce a unique number.
+ *
+ * A pattern with no counter — `INV-{YYYY}` — renders the same string for every
+ * document in the period. The reservation's "skip a number already issued" loop
+ * would then never advance, freezing the app on submit. This is checked before
+ * the loop runs (and before the settings screen saves), not inside it.
+ */
+export function assertCounterPattern(pattern: string): void {
+  if (!hasCounter(pattern)) {
+    throw new NumberPatternError(
+      `The number pattern "${pattern}" has no counter. Add a {####} token, otherwise every document in a period would be given the same number.`,
+    );
+  }
+}
+
 /** A preview number for the settings screen, using the next unused value. */
 export function previewNumber(pattern: string, ctx: Omit<NumberContext, 'value'>, nextValue = 1): string {
   return renderNumber(pattern, { ...ctx, value: nextValue });

@@ -85,9 +85,19 @@ import { DEFAULT_TAX_CODES } from '@/core/tax/tax';
 import { emailAccountSchema } from '@/core/schemas/settings';
 import { DEFAULT_PATTERNS } from '@/core/schemas/automation';
 import { financialYearKey, todayIn } from '@/core/validation/dates';
-import { nextCounterValue, periodKeyFor, renderNumber, shouldReset } from '@/core/engines/numbering';
+import {
+  assertCounterPattern,
+  nextCounterValue,
+  NumberPatternError,
+  periodKeyFor,
+  renderNumber,
+  shouldReset,
+} from '@/core/engines/numbering';
 import type { BackupInfo, DataSnapshot, DocumentBundleRecord, QueryOptions, StorageAdapter } from '../types';
 import { SCHEMA_VERSION, appVersion, assertSchemaSupported } from './version';
+
+/** Ceiling on the "skip an already-issued number" loop — a backstop, not a rule. */
+const MAX_NUMBER_SKIPS = 100_000;
 
 /**
  * Every imported row validates through its table's schema: a hand-edited or
@@ -582,6 +592,11 @@ export class DexieStorageAdapter implements StorageAdapter {
       const settingsRow = await this.db.settings.get('settings');
       const fyMonth = settingsRow?.financialYearStartMonth ?? 7;
 
+      // A pattern with no counter renders the same number for every document,
+      // so the skip loop below would never terminate — the app froze on submit.
+      // Refuse before reserving anything; the bounded loop below is the backstop.
+      assertCounterPattern(sequence.pattern);
+
       const reset = shouldReset(sequence, args.date, fyMonth);
       let value = nextCounterValue(sequence, reset);
       let number = renderNumber(sequence.pattern, {
@@ -593,6 +608,7 @@ export class DexieStorageAdapter implements StorageAdapter {
       });
       // A number once issued can never be issued again, whatever the reset
       // rule did — a forward reset can land on a counter that already ran.
+      let skipped = 0;
       while (sequence.issued.includes(number)) {
         value += 1;
         number = renderNumber(sequence.pattern, {
@@ -602,6 +618,11 @@ export class DexieStorageAdapter implements StorageAdapter {
           clientCode: args.clientCode,
           profileCode: args.profileCode,
         });
+        if (++skipped > MAX_NUMBER_SKIPS) {
+          throw new NumberPatternError(
+            `Could not find a free number under the pattern "${sequence.pattern}" after ${MAX_NUMBER_SKIPS} attempts.`,
+          );
+        }
       }
 
       sequence.nextValue = value + 1;

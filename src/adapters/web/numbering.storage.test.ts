@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebPlatform, setPlatform } from '@/adapters';
 import { storage } from '@/adapters/types';
-import { renderNumber, periodKeyFor } from '@/core/engines/numbering';
+import { assertCounterPattern, NumberPatternError, renderNumber, periodKeyFor } from '@/core/engines/numbering';
 
 let close: (() => Promise<void>) | null = null;
 
@@ -185,6 +185,30 @@ describe('reserveDocumentNumber', () => {
     expect(sequences).toHaveLength(1);
     expect(sequences[0].documentType).toBe('invoice');
     expect(sequences[0].periodKey).toBe(periodKeyFor('2026-10-06', 'yearly'));
+  });
+
+  it('refuses to reserve from a pattern with no counter instead of hanging', async () => {
+    await freshStorage();
+    const db = storage();
+
+    await db.reserveDocumentNumber({ profileId: 'prof_1', documentType: 'invoice', date: '2026-10-06' });
+    const [sequence] = await db.listNumberSequences('prof_1');
+    // A counterless pattern that has already "issued" the one number it can
+    // render is exactly what froze submit: the skip loop never advanced.
+    await db.saveNumberSequence({ ...sequence, pattern: 'INV-{YYYY}', issued: ['INV-2026'] });
+
+    await expect(
+      db.reserveDocumentNumber({ profileId: 'prof_1', documentType: 'invoice', date: '2026-10-06' }),
+    ).rejects.toThrow(/counter/i);
+  });
+});
+
+describe('assertCounterPattern', () => {
+  it('accepts a pattern with a counter and rejects one without', () => {
+    expect(() => assertCounterPattern('INV-{YYYY}-{####}')).not.toThrow();
+    expect(() => assertCounterPattern('ACME-{YYYY}-{###}')).not.toThrow();
+    expect(() => assertCounterPattern('INV-{YYYY}')).toThrow(NumberPatternError);
+    expect(() => assertCounterPattern('INV-{YYYY}')).toThrow(/counter/i);
   });
 });
 

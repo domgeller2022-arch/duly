@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Document } from '@/core/schemas';
 import {
   convertQuoteToInvoice,
+  createDocument,
   deriveDocumentStatus,
   duplicateDocument,
   isOpenDocument,
@@ -215,5 +216,42 @@ describe('copies carry what the source said (duplicate, convert, credit)', () =>
     const built = convertQuoteToInvoice(quote, lines, profile, settings, '2026-10-09', client);
     expect(built.document.clientId).toBe(client.id);
     expect(built.document.taxMode).toBe('inclusive');
+  });
+
+  it('does not add the client’s standing discount a second time on a copy', () => {
+    // A client with a standing discount gets that discount as a line on a new
+    // document. A duplicate already carries that line, so adding it again
+    // applied the discount twice — a $1,000 job with 10% off copied as $891.
+    const discountedClient = newClient({ displayName: 'Client Co', defaultDiscountPercent: '10' });
+    const built = createDocument({
+      type: 'invoice',
+      profile,
+      settings,
+      client: discountedClient,
+      today: '2026-10-01',
+    });
+    built.lines.push(
+      documentLineSchema.parse({
+        ...STAMPS,
+        id: 'work_1',
+        documentId: built.document.id,
+        type: 'item',
+        description: 'Work',
+        quantity: '1',
+        unitPrice: 100000,
+        position: 0,
+      }),
+    );
+    expect(built.lines.filter((l) => l.type === 'discount')).toHaveLength(1);
+
+    const copy = duplicateDocument(
+      built.document,
+      built.lines,
+      profile,
+      settings,
+      '2026-10-09',
+      discountedClient,
+    );
+    expect(copy.lines.filter((l) => l.type === 'discount')).toHaveLength(1);
   });
 });

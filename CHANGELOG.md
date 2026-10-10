@@ -22,6 +22,34 @@ three changelog claims the code did not back up. R12–R23 below are the second
 remediation round: they close the re-audit's findings in the order it asked
 for, each with a test that fails before the fix.
 
+### Remediation R13 — numbers that cannot freeze, discounts that are not doubled
+
+The re-audit's first two fixes: the two new problems the R1–R11 work
+introduced that change money or stop the app.
+
+- **A duplicate or quote conversion no longer charges the client's standing
+  discount twice.** `createDocument` puts a client's standing discount on a
+  document as a line, and a copy already carries the source's lines —
+  including that line. Passing the client to a copy (the fix for the lost
+  client, C5) therefore added the discount again: a $1,000 job with a 10%
+  standing discount duplicated as $891. The standing discount is now added
+  only to a genuinely new document, never to one built from a source.
+- **A numbering pattern with no counter can no longer freeze the app.** A
+  pattern like `INV-{YYYY}` renders the same string for every document in a
+  period, so the reservation's "skip a number already issued" loop never
+  advanced — the app hung on submit, and the Numbering screen saved such a
+  pattern (it warned, but saved on every keystroke). The reservation now
+  refuses a counterless pattern up front (`assertCounterPattern`) with a
+  clear error; the skip loop has a bounded backstop in case a future pattern
+  can still collide; and the settings screen holds an invalid pattern as a
+  local draft instead of saving it, so the warning it always showed is now
+  enforced.
+
+Tests (fail before, pass after): a duplicate of a client-discounted invoice
+carries exactly one discount line; reserving from a counterless pattern
+rejects instead of hanging; `assertCounterPattern` accepts counters and
+rejects their absence.
+
 ### Remediation R12 — the re-audit's UI patch
 
 The re-audit's patch (`duly-ui-fixes.patch`, generated independently) applied

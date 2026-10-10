@@ -12,7 +12,7 @@
  * package cannot have.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Lock } from 'lucide-react';
 import { DOCUMENT_TYPES } from '@/core/schemas';
 import { NUMBER_TOKENS, hasCounter } from '@/core/engines/numbering';
@@ -41,6 +41,12 @@ export function NumberingSection() {
   const saveNumberSequence = useAppStore((s) => s.saveNumberSequence);
 
   const profile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+
+  // Pattern edits are held locally until they are valid. The screen saves on
+  // every keystroke, and a pattern with no counter must never reach storage:
+  // reserving from one would freeze the app on submit. (The reservation also
+  // refuses it, but it should not be saved in the first place.)
+  const [patternDrafts, setPatternDrafts] = useState<Record<string, string>>({});
 
   // Create the rows on first visit so every type has something to edit and preview.
   useEffect(() => {
@@ -81,7 +87,8 @@ export function NumberingSection() {
                 documentType,
                 settings?.financialYearStartMonth ?? 7,
               );
-              const valid = hasCounter(sequence.pattern);
+              const pattern = patternDrafts[documentType] ?? sequence.pattern;
+              const draftValid = hasCounter(pattern);
 
               return (
                 <tr key={documentType}>
@@ -92,12 +99,24 @@ export function NumberingSection() {
                     <TextInput
                       inputSize="sm"
                       monospace
-                      invalid={!valid}
-                      value={sequence.pattern}
+                      invalid={!draftValid}
+                      value={pattern}
                       aria-label={`Number pattern for ${documentTypeLabel(documentType)}`}
-                      onChange={(e) => void saveNumberSequence({ ...sequence, pattern: e.target.value })}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setPatternDrafts((drafts) => ({ ...drafts, [documentType]: next }));
+                        // Only a pattern that can produce a unique number is
+                        // saved; the rest stay a local draft until they are.
+                        if (hasCounter(next)) void saveNumberSequence({ ...sequence, pattern: next });
+                      }}
+                      onBlur={() =>
+                        setPatternDrafts((drafts) => {
+                          const { [documentType]: _dropped, ...rest } = drafts;
+                          return rest;
+                        })
+                      }
                     />
-                    {!valid && (
+                    {!draftValid && (
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] text-overdue">
                         <AlertTriangle className="size-3" aria-hidden />
                         Needs a {'{####}'} counter, or every document this year gets the same number.

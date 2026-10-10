@@ -106,7 +106,11 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
   // The client carries a standing discount: put it on the document as a
   // discount line so the editor, the PDF and the calculation all see the same
   // number, and the user can remove or adjust it before submitting.
-  if (client?.defaultDiscountPercent && client.defaultDiscountPercent !== '0') {
+  //
+  // Only on a genuinely new document. A copy already carries the source's
+  // lines, including its standing discount line — adding it again multiplied
+  // the client's discount twice (a $1,000 job with 10% off duplicated as $891).
+  if (!source && client?.defaultDiscountPercent && client.defaultDiscountPercent !== '0') {
     lines.push(
       documentLineSchema.parse(
         newEntity({
