@@ -308,13 +308,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
           bundle.document.clientId ? db.listClientCredits(bundle.document.clientId) : Promise.resolve([]),
         ]);
 
-        const result = calculate({
+        // The same service every other writer uses. An issued document
+        // calculates on its frozen snapshot codes and against its linked
+        // credit notes, and the rounding comes from the settings. Loading it
+        // on the live codes alone showed a tax-deactivated invoice at the
+        // wrong figure and ignored a credit note — on screen, in the record
+        // payment prefill, in exports and in emails. Nothing is saved here.
+        const { result } = await recalculateDocument({
           document: bundle.document,
           lines: bundle.lines,
           payments: bundle.payments,
           taxCodes,
-          clientCreditAvailable: client ? creditFor(client) : 0,
-          rateToAud: bundle.document.exchangeRateToAud,
+          deriveStatus: false,
+          save: false,
         });
 
         set({

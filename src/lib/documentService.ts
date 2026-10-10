@@ -107,6 +107,10 @@ export async function recalculateDocument(args: RecalculateArgs): Promise<{
     taxCodes: taxCodesFor(document, liveCodes),
     roundingMethod: settings?.roundingMethod,
     linkedCreditMinor,
+    // The informational AUD equivalent is part of the stored totals, so the
+    // service must carry the document's rate — omitting it stored `null` and
+    // made a foreign-currency document disagree with itself.
+    rateToAud: document.exchangeRateToAud,
   });
 
   let next: Document = applyTotals({ ...document }, result);

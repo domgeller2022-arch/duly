@@ -22,6 +22,35 @@ three changelog claims the code did not back up. R12–R23 below are the second
 remediation round: they close the re-audit's findings in the order it asked
 for, each with a test that fails before the fix.
 
+### Remediation R14 — the editor shows what is stored
+
+The editor's `load` called `calculate()` directly, on the live tax table and
+without the document's linked credit notes — the one path that did not go
+through the recalculate-and-save service R2 introduced. So the screen, the
+record-payment prefill, exports and emails all used figures that disagreed
+with the stored record.
+
+- **An issued invoice ignores later tax-code changes, on screen too.** The
+  engine has used the frozen tax snapshot for issued documents since R2, but
+  the editor loaded on the live table: deactivating GST showed a $1,100 issued
+  invoice as $1,000, and Export and Email sent that figure. `load` now uses
+  the service, so the snapshot governs what is displayed, exported and emailed.
+- **An issued invoice with a credit note shows its real balance.** The editor
+  ignored linked credit notes, so a fully credited invoice stored at $0 and
+  Paid was shown — pre-filled in "Record payment", and printed on any PDF
+  exported or emailed from the editor — at its full $1,100. The service counts
+  the linked notes; the editor shows that figure now.
+- **The rounding method comes from the settings** on load, like every other
+  calculation, instead of the ATO default.
+- Also in this phase: the service omitted the document's `exchangeRateToAud`
+  from its own calculation, so a foreign-currency document stored a `null`
+  informational AUD equivalent while the editor showed one. The service passes
+  the rate now, and the two agree.
+
+Tests: an issued invoice keeps its total after its tax code is deactivated
+(1100, not 1000); an issued invoice shows the balance its linked credit note
+left (0, not 1100). Both fail on the old `load` and pass on the new one.
+
 ### Remediation R13 — numbers that cannot freeze, discounts that are not doubled
 
 The re-audit's first two fixes: the two new problems the R1–R11 work
