@@ -29,7 +29,6 @@ import {
   Percent,
 } from 'lucide-react';
 import type { Client, Document, DocumentLine, DocumentType } from '@/core/schemas';
-import { documentLineSchema } from '@/core/schemas/document';
 import { contentPresetSchema } from '@/core/schemas/template';
 import { newEntity } from '@/core/schemas/common';
 import { useAppStore, useActiveProfile } from '@/state/app';
@@ -55,6 +54,9 @@ import {
   documentHeading,
   duplicateDocument,
   voidDocument,
+  insertDiscount,
+  insertNote,
+  insertSection,
 } from '@/core/documents';
 import {
   Alert,
@@ -623,37 +625,18 @@ export function DocumentEditorScreen({ type }: { type: DocumentType }) {
 
         <LineGrid
           columns={columns}
+          // The bottom buttons insert at the end through the same helpers as
+          // each row's menu. They used to build the line with a bare
+          // documentLineSchema.parse, which throws without id/createdAt/
+          // updatedAt — so every click failed silently and added nothing.
           onAddSection={() =>
-            store.addLine(
-              documentLineSchema.parse({
-                documentId: doc.id,
-                position: lines.length,
-                type: 'section',
-                description: 'New section',
-              }),
-            )
+            store.replaceLines(insertSection(lines, lines.length, 'New section', doc.id), 'Add section')
           }
-          onAddNote={() =>
-            store.addLine(
-              documentLineSchema.parse({
-                documentId: doc.id,
-                position: lines.length,
-                type: 'note',
-                description: '',
-              }),
-            )
-          }
+          onAddNote={() => store.replaceLines(insertNote(lines, lines.length, '', doc.id), 'Add note')}
           onAddDiscount={() =>
-            store.addLine(
-              documentLineSchema.parse({
-                documentId: doc.id,
-                position: lines.length,
-                type: 'discount',
-                description: 'Discount',
-                discountType: 'percent',
-                discountValue: '5',
-                discountDirection: 'discount',
-              }),
+            store.replaceLines(
+              insertDiscount(lines, lines.length, { kind: 'discount', percent: '5', documentId: doc.id }),
+              'Add discount',
             )
           }
         />

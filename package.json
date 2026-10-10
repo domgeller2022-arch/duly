@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "coverage": "vitest run --coverage",
-    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false || tsc -b",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,css,json,md}\"",

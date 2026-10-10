@@ -578,20 +578,33 @@ export function Checkbox({
   const inputId = id ?? generated;
   return (
     <div className={cn('flex items-start gap-2.5', className)}>
-      <input
-        id={inputId}
-        type="checkbox"
-        aria-label={label === '' ? ariaLabel : undefined}
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className={cn(
-          'mt-0.5 size-4 shrink-0 cursor-pointer appearance-none rounded-[4px] border border-rule-strong bg-paper-raised',
-          'transition-colors duration-150 checked:border-accent checked:bg-accent',
-          "checked:bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6'/%3E%3C/svg%3E\")] checked:bg-center checked:bg-no-repeat",
-          'disabled:cursor-not-allowed disabled:opacity-50',
-        )}
-      />
+      {/*
+        A filled box with a real tick. The tick used to be a data-URI background
+        in an arbitrary Tailwind class: Tailwind never compiled it, and
+        tailwind-merge treated it as a background colour and dropped
+        `checked:bg-accent` — so a checked box only changed its border colour.
+        The tick is now an icon over the input, in the on-accent colour.
+      */}
+      <span className="relative mt-0.5 inline-flex size-4 shrink-0">
+        <input
+          id={inputId}
+          type="checkbox"
+          aria-label={label === '' ? ariaLabel : undefined}
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+          className={cn(
+            'peer size-4 cursor-pointer appearance-none rounded-[4px] border border-rule-strong bg-paper-raised',
+            'transition-colors duration-150 checked:border-accent checked:bg-accent',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+          )}
+        />
+        <Check
+          aria-hidden
+          strokeWidth={3}
+          className="pointer-events-none absolute inset-0 m-auto size-3 text-on-accent opacity-0 transition-opacity duration-150 peer-checked:opacity-100"
+        />
+      </span>
       <label htmlFor={inputId} className="cursor-pointer select-none text-[13px] leading-snug text-ink">
         {label}
         {hint && <span className="mt-0.5 block text-[12px] text-ink-muted">{hint}</span>}
@@ -640,7 +653,7 @@ export function Switch({ checked, onChange, label, hint, disabled, className, id
       >
         <span
           className={cn(
-            'absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+            'absolute top-0.5 left-0 size-4 rounded-full bg-white shadow-sm transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
             checked ? 'translate-x-4.5' : 'translate-x-0.5',
           )}
         />

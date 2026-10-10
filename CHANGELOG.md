@@ -16,6 +16,52 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The initial release: the build plan's phases 0–10 — the web app, the desktop
 app for macOS and Windows, and the Android build. Newest first.
 
+An independent re-audit of R1–R10 (10 Oct) found 36 of 52 findings fixed, 13
+partial and 3 not fixed, plus new problems the fixes introduced, and named
+three changelog claims the code did not back up. R12–R23 below are the second
+remediation round: they close the re-audit's findings in the order it asked
+for, each with a test that fails before the fix.
+
+### Remediation R12 — the re-audit's UI patch
+
+The re-audit's patch (`duly-ui-fixes.patch`, generated independently) applied
+on top of R11. It fixes three of the five issues raised — all three confirmed
+bugs — and one more defect found in passing, and touches no audit finding.
+
+- **The selected tab and primary buttons are readable in dark mode.** The app
+  accent was written onto the page as fixed colours worked out for the light
+  theme only: in dark mode the selected sidebar item became near-white text on
+  a near-white tint, and primary buttons put dark text on dark teal. Each theme
+  now gets its own accent (lifted for dark paper), its own soft tint mixed with
+  that theme's paper, and an on-accent colour chosen by contrast, in a
+  stylesheet keyed on `data-theme` — so a system light/dark switch follows
+  without re-applying. The old inline properties, which outranked any
+  stylesheet, are cleared.
+- **Checkboxes fill and show a real tick.** The tick was a data-URI background
+  in an arbitrary Tailwind class that Tailwind never compiled, and
+  `tailwind-merge` then treated it as a background colour and dropped
+  `checked:bg-accent` — so a ticked box only changed its border colour. The
+  tick is now a `Check` icon over the input, in the on-accent colour, both
+  themes.
+- **The on/off switch's knob sits inside its track** (it had no left anchor, so
+  in the on state it sat outside).
+- **The Section, Note and Discount buttons under Line items work.** They built
+  a line with a bare `documentLineSchema.parse` — no id, no timestamps, and no
+  `documentId` on an empty invoice — so the data check rejected every click and
+  it failed silently (the same options in each row's ⋯ menu worked, which is
+  why it looked fixed). They now insert through the same `insertSection` /
+  `insertNote` / `insertDiscount` helpers the row menu uses, which take the
+  document's id.
+
+Also in this phase: the `typecheck` script ran `tsc -b --noEmit false …`, which
+*emitted* compiled `.js` files into `src/` before failing on a config error, and
+`eslint .` lints and errors on those files. The script is now `tsc -b`, which
+typechecks and emits nothing.
+
+Verified: typecheck and lint clean; the unit suite is 454 of 455, the one
+failure being the catalogue-search performance test that R9 documents as
+needing its own process (it passes in isolation, ~520 ms including setup).
+
 ### Remediation R1 — unblock the billing loop
 
 The first phase of the consolidated remediation plan (the two audits, merged):

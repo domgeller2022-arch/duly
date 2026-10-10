@@ -36,11 +36,85 @@ export function applyPreferences(settings: Settings | null): void {
   // Only the interface accent is set here. A business's own brand colour belongs
   // on its documents, not on the app chrome.
   const accent = settings?.appAccent;
-  if (accent && /^#[0-9a-f]{3,8}$/i.test(accent)) {
-    root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-hover', shade(accent, -0.12));
-    root.style.setProperty('--color-accent-soft', mixWithPaper(accent, 0.88));
+  if (accent && /^#[0-9a-f]{6}$/i.test(accent)) {
+    applyAccent(accent);
   }
+}
+
+const LIGHT_PAPER = { r: 250, g: 248, b: 244 };
+const DARK_PAPER = { r: 22, g: 21, b: 20 };
+
+/**
+ * The accent, per theme, as a stylesheet keyed on `data-theme`.
+ *
+ * It used to be written as inline properties on <html>, computed for the light
+ * theme only: in dark mode the selected sidebar item got a near-white tint
+ * behind near-white text, and primary buttons put dark text on dark teal. Each
+ * theme now gets its own accent (lifted for dark paper, as the plan's
+ * #1F5E5B → #4FA59B pairing intends), its own soft tint mixed with that theme's
+ * paper, and an on-accent colour chosen by contrast. Because the rules key on
+ * `data-theme`, a system light/dark switch follows without re-applying.
+ */
+function applyAccent(accent: string): void {
+  const root = document.documentElement;
+  // Clear the inline values earlier versions wrote, which outrank any stylesheet.
+  for (const name of ['--color-accent', '--color-accent-hover', '--color-accent-soft']) {
+    root.style.removeProperty(name);
+  }
+
+  const dark = liftForDark(accent);
+  const block = (selector: string, value: string, hover: string, soft: string) =>
+    `${selector}{--color-accent:${value};--color-accent-hover:${hover};--color-accent-soft:${soft};--color-on-accent:${bestInk(value)};}`;
+
+  const css = [
+    block(":root[data-theme='light']", accent, shade(accent, -0.12), mixWith(accent, LIGHT_PAPER, 0.88)),
+    block(":root[data-theme='dark']", dark, shade(dark, 0.12), mixWith(dark, DARK_PAPER, 0.8)),
+  ].join('\n');
+
+  let style = document.getElementById('duly-accent') as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'duly-accent';
+    document.head.appendChild(style);
+  }
+  style.textContent = css;
+}
+
+/** Lighten an accent until it reads on dark paper (4.5:1, so accent-coloured text passes too). */
+export function liftForDark(hex: string): string {
+  let current = hex;
+  for (let step = 0; step < 12 && contrastRatio(current, rgbToHex(DARK_PAPER.r, DARK_PAPER.g, DARK_PAPER.b)) < 4.5; step++) {
+    current = shade(current, 0.1);
+  }
+  return current;
+}
+
+/** Blend a colour toward another, for a soft background tint. */
+function mixWith(hex: string, toward: { r: number; g: number; b: number }, amount: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const mix = (c: number, t: number) => Math.round(c + (t - c) * amount);
+  return rgbToHex(mix(rgb.r, toward.r), mix(rgb.g, toward.g), mix(rgb.b, toward.b));
+}
+
+function relativeLuminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const channel = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+/** White or ink on a background — whichever contrasts more. */
+function bestInk(background: string): string {
+  return contrastRatio('#FFFFFF', background) >= contrastRatio('#1C1B19', background) ? '#FFFFFF' : '#1C1B19';
+}
+
+export function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
 }
 
 /**

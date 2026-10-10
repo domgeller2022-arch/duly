@@ -349,10 +349,17 @@ export function valuedLines(lines: DocumentLine[]): DocumentLine[] {
 }
 
 /** Insert a section heading above a line. */
-export function insertSection(lines: DocumentLine[], at: number, title: string): DocumentLine[] {
+export function insertSection(
+  lines: DocumentLine[],
+  at: number,
+  title: string,
+  documentId?: string,
+): DocumentLine[] {
   const section = documentLineSchema.parse(
     newEntity({
-      documentId: lines[0]?.documentId ?? '',
+      // On an empty document there is no line to borrow the id from, and an
+      // empty documentId fails the schema — the caller passes the document's.
+      documentId: documentId ?? lines[0]?.documentId ?? '',
       position: at,
       type: 'section',
       description: title,
@@ -365,10 +372,15 @@ export function insertSection(lines: DocumentLine[], at: number, title: string):
 }
 
 /** Insert a note line, which prints but never totals. */
-export function insertNote(lines: DocumentLine[], at: number, text: string): DocumentLine[] {
+export function insertNote(
+  lines: DocumentLine[],
+  at: number,
+  text: string,
+  documentId?: string,
+): DocumentLine[] {
   const note = documentLineSchema.parse(
     newEntity({
-      documentId: lines[0]?.documentId ?? '',
+      documentId: documentId ?? lines[0]?.documentId ?? '',
       position: at,
       type: 'note',
       description: text,
@@ -388,11 +400,12 @@ export function insertDiscount(
     percent: string;
     appliesToSectionId?: string | null;
     description?: string;
+    documentId?: string;
   },
 ): DocumentLine[] {
   const discount = documentLineSchema.parse(
     newEntity({
-      documentId: lines[0]?.documentId ?? '',
+      documentId: options.documentId ?? lines[0]?.documentId ?? '',
       position: at,
       type: 'discount',
       description: options.description ?? (options.kind === 'surcharge' ? 'Surcharge' : 'Discount'),
