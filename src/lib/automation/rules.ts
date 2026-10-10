@@ -67,9 +67,13 @@ export async function applyRulesToDocument(document: Document): Promise<RuleAppl
   if (document.deletedAt) return null;
 
   const [rules, context] = await Promise.all([storage().listRules(), buildRuleContext(document)]);
-  if (rules.length === 0 || !context) return null;
+  // Skip rules that already fired on this document, so the 15-minute pass does
+  // not keep undoing an override the user made in the editor.
+  const alreadyFired = new Set(document.appliedRuleIds);
+  const pending = rules.filter((r) => !alreadyFired.has(r.id));
+  if (pending.length === 0 || !context) return null;
 
-  const outcome = evaluateRules(rules, context);
+  const outcome = evaluateRules(pending, context);
   if (outcome.applied.length === 0) return null;
 
   // Only write when a value actually changed. A rule whose actions match the
@@ -80,7 +84,11 @@ export async function applyRulesToDocument(document: Document): Promise<RuleAppl
   );
   if (changed.length === 0) return null;
 
-  await storage().saveDocument({ ...document, ...outcome.patch });
+  await storage().saveDocument({
+    ...document,
+    ...outcome.patch,
+    appliedRuleIds: [...document.appliedRuleIds, ...outcome.applied.map((r) => r.id)],
+  });
 
   return {
     documentId: document.id,

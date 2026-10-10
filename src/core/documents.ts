@@ -92,6 +92,9 @@ export function createDocument(args: NewDocumentArgs): { document: Document; lin
       reference: source?.reference ?? '',
       tags: preset?.tags ?? [],
       customFields: source?.customFields ?? {},
+      // A copy inherits the source's fired-rule marker: its lines already carry
+      // what those rules set, so re-firing (a markup, say) would double it.
+      appliedRuleIds: source?.appliedRuleIds ?? [],
       quoteValidUntil: type === 'quote' ? quoteExpiry(issueDate, settings.defaultQuoteValidityDays) : null,
       linkedDocumentIds: source ? [source.id] : [],
       // A fresh draft never has a real number. The placeholder makes the list

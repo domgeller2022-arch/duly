@@ -263,6 +263,12 @@ export const documentSchema = z.object({
   deposit: depositSchema.default({}),
   /** Credit balance taken from the client when this document was created. */
   clientCreditApplied: z.number().int().default(0),
+  /**
+   * Rules that have already fired on this document. A rule that has fired is
+   * never evaluated again, so a user's override of what it set is not undone
+   * by the next save — or by the scheduler's 15-minute pass over open drafts.
+   */
+  appliedRuleIds: z.array(z.string()).default([]),
 
   finalisedAt: isoDateTime.nullable().default(null),
   voidedAt: isoDateTime.nullable().default(null),

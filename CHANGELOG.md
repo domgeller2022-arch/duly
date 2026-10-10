@@ -23,6 +23,25 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R21 — a rule that has fired does not fire again
+
+- **A rule no longer re-applies and undoes your override.** The rule engine
+  re-evaluated every enabled rule on every editor save — and the scheduler
+  re-ran them over every open draft every 15 minutes — so a field a rule set
+  (a tax code, the terms, a markup) was put back moments after the user
+  changed it. A rule id that has fired is recorded on the document
+  (`appliedRuleIds`) and skipped from then on, in both the editor and the
+  scheduler. A copy inherits the marker, so re-firing cannot double a rule's
+  effect (a markup, say) on a duplicate or a quote conversion.
+
+Tests (fail before, pass after): a draft matching an "Overseas → export tax"
+rule gets the export code and records the rule; after the user sets the code
+back by hand, a second pass leaves it alone.
+
+Boundary, named: the rules list's own "fired" counter (`fireCount`) is still
+only displayed, not incremented — a separate, cosmetic gap the re-audit did
+not raise.
+
 ### Remediation R20 — desktop email sends, and sends as itself
 
 - **"Send test email" works on the desktop.** The Rust command required a

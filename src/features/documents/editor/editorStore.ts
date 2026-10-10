@@ -157,7 +157,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
   async function applyRulesOnSave(document: NonNullable<EditorState['document']>, lines: DocumentLine[]): Promise<void> {
     try {
       const { useAppStore } = await import('@/state/app');
-      const rules = useAppStore.getState().rules.filter((r) => r.enabled && !r.deletedAt);
+      // A rule that already fired on this document is skipped: re-evaluating it
+      // on every save undid the user's override of what it set. (The scheduler's
+      // 15-minute pass honours the same marker.)
+      const alreadyFired = new Set(document.appliedRuleIds);
+      const rules = useAppStore
+        .getState()
+        .rules.filter((r) => r.enabled && !r.deletedAt && !alreadyFired.has(r.id));
       if (rules.length === 0 || document.status !== 'draft') return;
       const { buildRuleContext } = await import('@/lib/automation/rules');
       const { evaluateRules } = await import('@/core/engines/rules');
@@ -170,7 +176,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (changed.length === 0) return;
       commit(
         {},
-        { label: `Rules: ${outcome.applied.map((a) => a.name).join(', ')}`, documentPatch: outcome.patch },
+        {
+          label: `Rules: ${outcome.applied.map((a) => a.name).join(', ')}`,
+          documentPatch: {
+            ...outcome.patch,
+            appliedRuleIds: [...document.appliedRuleIds, ...outcome.applied.map((r) => r.id)],
+          },
+        },
       );
     } catch {
       // Rules are a convenience: a failure here must never block the save.
