@@ -35,8 +35,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npx playwright install --with-deps chromium
       - run: npm ci
+      # Installed after `npm ci`, so Playwright matches the version the project
+      # pins (1.63) rather than whatever `npx` resolves to (1.64) — the browser
+      # checks then launch instead of failing to find their browser build.
+      - run: npx playwright install --with-deps chromium
       - run: npm run verify:data
       - run: npm run verify:editor
       - run: npm run verify:offline

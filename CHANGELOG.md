@@ -23,6 +23,19 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R19 — CI installs the browser the project pins
+
+- **The browser job installs Playwright after `npm ci`.** It ran
+  `npx playwright install` first, which resolved Playwright from the registry
+  and downloaded *its* browsers, while `npm ci` then installed the version the
+  project pins (1.63) — so the browser scripts would fail to find a matching
+  browser build. Swapping the two steps is the whole fix; the unit job already
+  runs typecheck, lint and both test invocations in the right order.
+
+Verified: the workflow parses and the browser job's steps are now `npm ci` →
+`npx playwright install --with-deps chromium` → the three verify scripts. The
+Actions run itself is the confirmation that only happens on push.
+
 ### Remediation R18 — the two untouched findings, and redaction that redacts
 
 Three findings the re-audit found still open, two of them contradicting a
