@@ -132,15 +132,68 @@ export function BankImportScreen() {
   const confirm = async () => {
     const target = confirming;
     if (!target) return;
-    const invoice = documents.find((d) => d.id === target.invoiceId) ?? null;
-    const amountMinor = Math.round((Number.parseFloat(confirmAmount) || 0) * 100);
-    if (!invoice || amountMinor <= 0) {
-      push({ tone: 'warning', title: 'Pick an invoice and an amount first' });
-      return;
-    }
 
     try {
       const db = storage();
+
+      // A split settles several invoices: one payment each, for its balance.
+      const splitIds = target.splitInvoiceIds ?? [];
+      if (splitIds.length > 1) {
+        const splitInvoices = splitIds.flatMap((id) => {
+          const found = documents.find((d) => d.id === id);
+          return found ? [found] : [];
+        });
+        if (splitInvoices.length === 0) {
+          push({ tone: 'warning', title: 'The invoices for this split could not be found' });
+          return;
+        }
+        for (const invoice of splitInvoices) {
+          await db.savePayment(
+            paymentSchema.parse(
+              newEntity({
+                documentId: invoice.id,
+                date: confirmDate || target.transaction.date,
+                amount: invoice.totals.balance,
+                method: 'bank_transfer',
+                reference: target.transaction.reference || target.transaction.description,
+                note: `Imported from ${target.transaction.source.toUpperCase()} statement (split)`,
+                isDeposit: false,
+                bankTransactionId: target.transaction.externalId || null,
+              }),
+            ),
+          );
+          await recalculateDocument({ document: invoice, today });
+        }
+        await db.saveBankTransaction(
+          bankTransactionSchema.parse(
+            newEntity({
+              date: target.transaction.date,
+              description: target.transaction.description,
+              amount: target.transaction.amountMinor,
+              reference: target.transaction.reference,
+              matchedDocumentId: splitInvoices[0].id,
+              matchedPaymentId: null,
+              matchMethod: 'none',
+              matchConfidence: 0.5,
+              status: 'confirmed',
+              note: `Confirmed as a split across ${splitInvoices.length} invoices`,
+            }),
+          ),
+        );
+        await refreshDocuments();
+        setIgnored((prev) => new Set(prev).add(keyOf(target)));
+        setConfirming(null);
+        push({ tone: 'success', title: `Split recorded across ${splitInvoices.length} invoices` });
+        return;
+      }
+
+      const invoice = documents.find((d) => d.id === target.invoiceId) ?? null;
+      const amountMinor = Math.round((Number.parseFloat(confirmAmount) || 0) * 100);
+      if (!invoice || amountMinor <= 0) {
+        push({ tone: 'warning', title: 'Pick an invoice and an amount first' });
+        return;
+      }
+
       const payment = paymentSchema.parse(
         newEntity({
           documentId: invoice.id,
@@ -304,7 +357,11 @@ export function BankImportScreen() {
                         )}
                       </div>
                     </Td>
-                    <Td className="text-ink-muted">{invoice?.number || '—'}</Td>
+                    <Td className="text-ink-muted">
+                      {result.splitInvoiceIds && result.splitInvoiceIds.length > 1
+                        ? `Split — ${result.splitInvoiceIds.length} invoices`
+                        : invoice?.number || '—'}
+                    </Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -355,7 +412,8 @@ export function BankImportScreen() {
         <Alert tone="info" title="How matching works" className="mt-4">
           A line matches an invoice when its description or reference contains the invoice number and the
           amount equals the balance. Otherwise, exactly one open invoice with the same balance is suggested.
-          Confirming a smaller amount records a part payment — that is the split.
+          A line whose amount equals the sum of several of one client's invoices is offered as a split.
+          Confirming a smaller amount records a part payment.
         </Alert>
       )}
 
@@ -366,36 +424,57 @@ export function BankImportScreen() {
         size="sm"
       >
         <div className="grid gap-3">
-          <Field label="Invoice">
-            <Select
-              value={confirming?.invoiceId ?? openInvoices[0]?.id ?? ''}
-              onChange={(e) =>
-                setConfirming((prev) =>
-                  prev ? { ...prev, invoiceId: e.target.value || null, confidence: prev.confidence } : prev,
-                )
-              }
-            >
-              {openInvoices.map((invoice) => (
-                <option key={invoice.id} value={invoice.id}>
-                  {invoice.number || 'Draft'} — balance {money(invoice.totals.balance, invoice.currency)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Amount" hint="A smaller amount records a part payment.">
-            <TextInput
-              type="number"
-              step="0.01"
-              value={confirmAmount}
-              onChange={(e) => setConfirmAmount(e.target.value)}
-            />
-          </Field>
+          {confirming?.splitInvoiceIds && confirming.splitInvoiceIds.length > 1 ? (
+            <Alert tone="info" title={`Split across ${confirming.splitInvoiceIds.length} invoices`}>
+              <ul className="mt-1 list-disc pl-4">
+                {confirming.splitInvoiceIds.map((id) => {
+                  const splitInvoice = documents.find((d) => d.id === id);
+                  return (
+                    <li key={id}>
+                      {splitInvoice?.number || 'Draft'} —{' '}
+                      {splitInvoice ? money(splitInvoice.totals.balance, splitInvoice.currency) : ''}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-1">Each invoice is paid its balance in full.</p>
+            </Alert>
+          ) : (
+            <>
+              <Field label="Invoice">
+                <Select
+                  value={confirming?.invoiceId ?? openInvoices[0]?.id ?? ''}
+                  onChange={(e) =>
+                    setConfirming((prev) =>
+                      prev ? { ...prev, invoiceId: e.target.value || null, confidence: prev.confidence } : prev,
+                    )
+                  }
+                >
+                  {openInvoices.map((invoice) => (
+                    <option key={invoice.id} value={invoice.id}>
+                      {invoice.number || 'Draft'} — balance {money(invoice.totals.balance, invoice.currency)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Amount" hint="A smaller amount records a part payment.">
+                <TextInput
+                  type="number"
+                  step="0.01"
+                  value={confirmAmount}
+                  onChange={(e) => setConfirmAmount(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
           <Field label="Date">
             <TextInput type="date" value={confirmDate} onChange={(e) => setConfirmDate(e.target.value)} />
           </Field>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => void confirm()}>
-              Record payment
+              {confirming?.splitInvoiceIds && confirming.splitInvoiceIds.length > 1
+                ? 'Record split'
+                : 'Record payment'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>
               Cancel

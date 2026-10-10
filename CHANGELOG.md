@@ -23,6 +23,25 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R29 — one bank line across several invoices
+
+The plan asked for a bank line to be splittable across invoices; the matcher
+only ever settled exactly one.
+
+- **A line whose amount equals the sum of a client's invoices is offered as a
+  split.** The matcher finds a set of two to four of one client's open invoices
+  that sum exactly to the line's amount — a client paying three invoices in one
+  transfer — and offers them as a split. Only same-client invoices are
+  combined, so a coincidence across unrelated invoices is not read as a payment.
+- **Confirming a split records one payment per invoice**, for each invoice's
+  balance, and writes a single bank-transaction record noting the split. The
+  review row shows "Split — N invoices", and the confirm dialog lists them and
+  changes its button to "Record split".
+
+Tests (fail before, pass after): one line summing two of a client's invoices is
+offered as a split with both ids; the same line across two different clients
+stays unmatched.
+
 ### Remediation R28 — AI cost visibility: a running total, a cap, and a preview
 
 The plan's item 6, which the audit found entirely missing.

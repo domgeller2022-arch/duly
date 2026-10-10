@@ -159,4 +159,26 @@ describe('matchTransactions', () => {
     const results = matchTransactions([tx({ reference: '', description: 'Payment' })], [doc, other], []);
     expect(results[0].status).toBe('unmatched');
   });
+
+  it('offers a split when one line equals the sum of a client’s invoices', () => {
+    const clientId = 'client-1';
+    const a = invoice({ id: 'inv-a', number: '', clientId, totals: { total: 100000, balance: 100000 } });
+    const b = invoice({ id: 'inv-b', number: '', clientId, totals: { total: 87000, balance: 87000 } });
+    const results = matchTransactions(
+      [tx({ reference: '', description: 'Payment', amountMinor: 187000 })],
+      [a, b],
+      [],
+    );
+    expect(results[0].status).toBe('payment');
+    expect(results[0].invoiceId).toBeNull();
+    expect(results[0].splitInvoiceIds).toEqual(['inv-a', 'inv-b']);
+  });
+
+  it('does not split across invoices of different clients', () => {
+    const a = invoice({ id: 'inv-a', number: '', clientId: 'client-1', totals: { total: 100000, balance: 100000 } });
+    const b = invoice({ id: 'inv-b', number: '', clientId: 'client-2', totals: { total: 87000, balance: 87000 } });
+    const results = matchTransactions([tx({ reference: '', description: 'Payment' })], [a, b], []);
+    expect(results[0].status).toBe('unmatched');
+    expect(results[0].splitInvoiceIds).toBeUndefined();
+  });
 });

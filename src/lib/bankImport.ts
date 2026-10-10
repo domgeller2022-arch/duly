@@ -35,6 +35,11 @@ export interface MatchResult {
   status: MatchStatus;
   /** The invoice a payment would settle, when one matched. */
   invoiceId: string | null;
+  /**
+   * When one line settles several of a client's invoices, their ids. Set only
+   * for a split; `invoiceId` is null in that case.
+   */
+  splitInvoiceIds?: string[];
   confidence: 'high' | 'medium';
 }
 
@@ -249,6 +254,62 @@ export function matchTransactions(
       };
     }
 
+    // Split: one transfer settling several of a client's invoices.
+    const splitInvoiceIds = findSplit(openInvoices, transaction.amountMinor);
+    if (splitInvoiceIds.length > 1) {
+      return {
+        transaction,
+        status: 'payment' as const,
+        invoiceId: null,
+        splitInvoiceIds,
+        confidence: 'medium' as const,
+      };
+    }
+
     return { transaction, status: 'unmatched' as const, invoiceId: null, confidence: 'high' as const };
   });
+}
+
+/**
+ * A single bank line that settles several of one client's invoices.
+ *
+ * A client paying three invoices in one transfer is one line whose amount
+ * equals the sum of their balances. Only invoices for the same client are
+ * combined, and only up to four of them, so a coincidence across unrelated
+ * invoices is not read as a payment. The smallest matching set wins, and the
+ * order is stable.
+ */
+function findSplit(invoices: Document[], amountMinor: number): string[] {
+  const byClient = new Map<string, Document[]>();
+  for (const invoice of invoices) {
+    if (!invoice.clientId || invoice.totals.balance <= 0 || invoice.totals.balance > amountMinor) continue;
+    const list = byClient.get(invoice.clientId) ?? [];
+    list.push(invoice);
+    byClient.set(invoice.clientId, list);
+  }
+  for (const list of byClient.values()) {
+    for (let size = 2; size <= Math.min(4, list.length); size++) {
+      const found = subsetSum(list, amountMinor, size);
+      if (found) return found.map((invoice) => invoice.id);
+    }
+  }
+  return [];
+}
+
+/** An exact-size subset of `invoices` whose balances sum to `target`, or null. */
+function subsetSum(invoices: Document[], target: number, size: number): Document[] | null {
+  const chosen: Document[] = [];
+  const search = (start: number, remaining: number): Document[] | null => {
+    if (chosen.length === size) return remaining === 0 ? [...chosen] : null;
+    for (let i = start; i < invoices.length; i++) {
+      const next = remaining - invoices[i].totals.balance;
+      if (next < 0) continue;
+      chosen.push(invoices[i]);
+      const found = search(i + 1, next);
+      if (found) return found;
+      chosen.pop();
+    }
+    return null;
+  };
+  return search(0, target);
 }
