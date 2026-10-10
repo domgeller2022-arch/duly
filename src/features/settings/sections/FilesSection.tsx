@@ -94,8 +94,11 @@ export function FilesSection() {
     <div className="space-y-4">
       {!capabilities.fileSystemAccess && (
         <Alert tone="warning" title="This browser cannot write into a folder you choose">
-          The File System Access API exists in Chrome and Edge on a computer, and nowhere else. Duly still
-          works here — submitted PDFs download instead of being filed automatically.
+          The File System Access API exists in Chrome and Edge on a computer, and nowhere else, so Duly
+          cannot file submitted PDFs into a folder automatically from this browser. Everything else works:
+          you can still submit, and export or download a PDF by hand at any time — nothing downloads on
+          submit unless you set "After submit" to "Automatically download a PDF". For automatic filing,
+          use Chrome or Edge, or the desktop app.
         </Alert>
       )}
 

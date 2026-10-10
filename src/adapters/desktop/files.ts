@@ -47,6 +47,23 @@ function resolvePath(folder: string, relativePath: string): string {
   return [folder, ...segments].join('/');
 }
 
+/** True when a path is absolute: a Unix root or a Windows drive. */
+function isAbsolutePath(path: string): boolean {
+  return /^([a-zA-Z]:[\\/]|[\\/])/.test(path);
+}
+
+/** Sanitise each segment of an absolute path, keeping its root. */
+function safeAbsolutePath(path: string): string {
+  const unix = path.replace(/\\/g, '/');
+  const root = /^[a-zA-Z]:\//.test(unix) ? unix.slice(0, 2) : '';
+  const rest = unix
+    .slice(root ? 2 : 0)
+    .split('/')
+    .filter((part) => part && part !== '.' && part !== '..')
+    .map(safeSegment);
+  return [root, ...rest].join('/');
+}
+
 /** Write bytes or text to an absolute path, creating parents. */
 async function writeAbs(path: string, data: Blob | string): Promise<void> {
   const dir = path.split(/[\\/]/).slice(0, -1).join('/');
@@ -101,6 +118,21 @@ export class DesktopFileAdapter implements FileAdapter {
     const folder = this.outputFolder;
     if (!folder) throw new Error('Choose an output folder first — the setting remembers it.');
     const path = resolvePath(folder, relativePath);
+    await writeAbs(path, data);
+    return path;
+  }
+
+  /**
+   * Overwrite a file at the path it was stored under.
+   *
+   * `writeFile` returns an absolute path on desktop, so re-filing a document
+   * must write back to that path — joining it onto the output folder again
+   * produced a nonsense path like `~/Invoices/Users/me/Invoices/2026/INV.pdf`.
+   */
+  async rewriteStoredFile(storedPath: string, data: Blob | string): Promise<string> {
+    const path = isAbsolutePath(storedPath)
+      ? safeAbsolutePath(storedPath)
+      : resolvePath(this.outputFolder ?? '', storedPath);
     await writeAbs(path, data);
     return path;
   }

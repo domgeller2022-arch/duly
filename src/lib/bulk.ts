@@ -293,7 +293,7 @@ export async function bulkRefile(documents: Document[], ctx: BulkContext): Promi
       });
       const blob = await renderDocumentPdf(model);
 
-      await files().writeFile(document.lastPdfPath, blob, { confirmOverwrite: false });
+      await files().rewriteStoredFile(document.lastPdfPath, blob);
       outcome.done += 1;
     } catch (error) {
       outcome.errors.push(

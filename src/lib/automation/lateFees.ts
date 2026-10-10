@@ -165,7 +165,10 @@ async function createFeeInvoice(
     }),
   );
 
-  await db.saveDocument(invoice, lines);
+  // Calculated through the service so the stored totals and status are right:
+  // the fee invoice used to be saved with zeroed totals and showed as $0.00 in
+  // the list and the dashboard until it was opened.
+  await recalculateDocument({ document: invoice, lines });
   await db.saveDocument({ ...source, lateFeeApplied: true });
 
   return {

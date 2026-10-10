@@ -335,6 +335,12 @@ export interface FileAdapter {
 
   /** Write text or a blob into the chosen folder at a relative path. */
   writeFile(relativePath: string, data: Blob | string, options?: WriteFileOptions): Promise<string>;
+  /**
+   * Overwrite a file the app wrote earlier, at the path it stored. On desktop
+   * that path is absolute; re-joining it onto the output folder is what
+   * produced a nonsense path on bulk re-file.
+   */
+  rewriteStoredFile(storedPath: string, data: Blob | string): Promise<string>;
   readFile(relativePath: string): Promise<string>;
   exists(relativePath: string): Promise<boolean>;
   deleteFile(relativePath: string): Promise<void>;

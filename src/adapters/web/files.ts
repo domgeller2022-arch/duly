@@ -163,6 +163,11 @@ export class WebFileAdapter implements FileAdapter {
     return this.writeInto(root, relativePath, data, options);
   }
 
+  /** On the web the stored path is already relative to the chosen folder. */
+  async rewriteStoredFile(storedPath: string, data: Blob | string): Promise<string> {
+    return this.writeFile(storedPath, data, { confirmOverwrite: false });
+  }
+
   /**
    * Write into the chosen backup folder.
    *

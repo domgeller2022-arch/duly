@@ -23,6 +23,35 @@ remediation round: they close the re-audit's findings roughly in the order it
 asked for, each with a test that fails before the fix where the behaviour is
 testable at all.
 
+### Remediation R22 — the smaller leftovers
+
+- **Desktop bulk "Re-file PDFs" writes to the right path.** A stored
+  `lastPdfPath` is absolute on desktop, and the re-file joined it onto the
+  output folder again, so the PDF was written to a nonsense path like
+  `~/Invoices/Users/me/Invoices/2026/INV.pdf`. The adapter has a
+  `rewriteStoredFile` now, which writes back to the stored path (each segment
+  still sanitised); the web path is unchanged, and relative.
+- **A late-fee invoice has its totals.** It was saved without calculating, so a
+  separate fee invoice showed as $0.00 in the list and the dashboard until it
+  was opened (which recalculated it). It goes through the recalculation service
+  now, like every other write.
+- **The Firefox notice tells the truth.** It said submitted PDFs "download
+  instead", but with the default "Just submit" setting nothing downloads — the
+  browser's File System Access API is simply unavailable, so automatic filing
+  is the only thing missing. The notice says that, and points at the
+  "Automatically download a PDF" setting for someone who does want the
+  download.
+
+Tests (fail before, pass after): a re-file writes to the stored absolute path,
+not joined onto the output folder; a fee invoice is stored with a non-zero
+total.
+
+Deferred, named: the desktop filesystem scope (M21) is still the user's home
+folder, with delete permission, and a folder outside it (an external drive) is
+still refused. Widening or narrowing that is a Tauri capability decision with
+real security weight, and it cannot be verified without a packaged desktop
+build — so it is left as its own task rather than changed blind.
+
 ### Remediation R21 — a rule that has fired does not fire again
 
 - **A rule no longer re-applies and undoes your override.** The rule engine
